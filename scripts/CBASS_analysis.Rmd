@@ -1,0 +1,179 @@
+---
+title: "tpcbass_drc_fitting"
+author: "ross"
+date: "2/13/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(drc)
+library(quantreg)
+library(mcr)
+library(broom)
+library(lubridate)
+library(tidyverse)
+
+# Create custom ggplot theme
+theme_custom <- function() {
+  theme_bw(base_size = 10, base_family = "Arial") %+replace%
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(), 
+      panel.background = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA),
+      legend.background = element_rect(fill = NA, colour = NA),
+      axis.title = element_text(size = 7),
+      axis.text = element_text(size = 5)
+    )
+}
+
+# # Labeller for treatments
+# treatment_labeller <- function(variable, value){
+#   return(list(
+#   'Normal'="High light",
+#   'lowLight'="Low light")[value])
+# }
+# 
+
+# Function to pivot IPAM data to long form with column for AOI
+ipam_convert <- function(data) {
+  data %>% select_if(~ !any(is.na(.))) %>%
+  pivot_longer(cols = starts_with("f") | starts_with("y")) %>%
+  separate(name, into = c("var", "aoi"), sep = "(?<=[A-Za-z_])(?=[0-9])")
+}
+```
+
+# Import rack, temperature, and coral position information
+```{r}
+# Import coral collection data
+corals <- readxl::read_xlsx("data/collection_metadata.xlsx") %>%
+  janitor::clean_names()
+
+# Import CBASS metadata (positions of corals on racks, and CBASS temperatures of each rack)
+rack_pos <- read_csv("data/CBASS/CBASS_rack_position_map.csv")
+rack_temp <- read_csv("data/CBASS/CBASS_rack_temp_map.csv")
+
+# Re-number positions by order on racks with empty positions
+rack_pos <- rack_pos %>%
+  group_by(rack_config) %>%
+  filter(basket_no != "X") %>%          # used to indicate empty position on rack
+  mutate(position = row_number()) %>%   # renumber pos. in same order, but w/o empty pos.
+  mutate(basket_no = as.numeric(basket_no))
+
+# Join CBASS metadata
+md <- full_join(rack_temp, rack_pos)
+md <- md %>%
+  unite(rack, rack_no, rack_config, sep = "") %>%
+  mutate(date = as_date(as.character(date)))
+```
+
+# Import I-PAM data
+```{r}
+# Import PAM data
+# List PAM files from 2021-09-06
+pamfiles <- list.files(path = "data/CBASS", pattern = "(^\\d).*.csv", 
+                       recursive = TRUE, full.names = TRUE)
+
+# Import data from each file
+pam1 <- pamfiles %>%
+  map_dfr(read_delim, delim = ";", .id = "file_id") %>%
+  janitor::clean_names() %>%
+  mutate(file_id = basename(pamfiles[as.numeric(file_id)]),
+         date = as_date(date, format = "%d.%m.%y"))
+
+# # For files that have multiple sat pulses -- keep the last one only
+pam1 <- pam1 %>%
+  group_by(file_id, date) %>%
+  filter(no == max(no)) %>%
+  ungroup()
+
+# For each source file, convert to long form data with F, FM, and YII for each AOI
+pam1 <- pam1 %>%
+  nest(-file_id, -date) %>%
+  mutate(data2 = map(data, ipam_convert)) %>%
+  unnest(data2) %>%
+  group_by(file_id, date) %>%
+  select(file_id, date, time, aoi, var, value)
+
+pam1 <- pam1 %>%
+  separate(file_id, into = c("rack", "junk"))
+  
+
+# Join PAM data with rack order information (which PAM file corresponds to which rack of corals)
+pam <- pam1 %>%
+  group_by(rack, date) %>%
+  mutate(position = ceiling(as.numeric(aoi)/2)) %>%
+  ungroup()
+
+pam <- left_join(pam, md) %>% left_join(corals, by = "basket_no")
+```
+
+# Fit dose-response curves
+```{r}
+# Get Fv/Fm data and tidy
+df <- pam %>%
+  mutate(max_temp = as.numeric(temp)) %>%
+  pivot_wider(names_from = var, values_from = value) %>%
+  mutate(fvfmraw = y_ii_, fvfm = y_ii_) %>%
+  select(date, tag_number, max_temp, f, fm, fvfmraw, fvfm)
+
+# Define function to fit 3-parameter LL model to data and return NULL if fitting error
+ll3 <- function(data) {
+  drm(fvfm ~ max_temp, data = data, 
+      fct = LL.3(names = c("hill", "max", "ED50")))}#,
+      # upperl = c(50, 0.7, 40),
+      # lowerl = c(20, 0.3, 30))}
+tryll3 <- possibly(ll3, otherwise = NULL)
+
+# Fit model to each coral, get parameters, fitted values, and residuals
+initmods <- df %>%
+  nest(data = c(date, max_temp, f, fm, fvfmraw, fvfm)) %>%
+  # Fit the model to each coral
+  mutate(ll3 = map(data, tryll3)) %>%
+  # Get model parameters and fitted values/residuals
+  mutate(pars = map(ll3, tidy),
+         pred = map2(ll3, data, ~augment(.x, drop_na(.y, fvfm))))
+
+# Extract ed50 parameter values from model fits
+ed50 <- initmods %>% 
+  select(tag_number, pars) %>%
+  unnest(pars) %>%
+  filter(term == "ED50")
+
+hist(ed50$estimate, breaks = 30)
+
+# Collect raw data, fitted values, and diagnostics
+vals <- initmods %>%
+  select(tag_number, pred) %>%
+  unnest(pred) %>%
+  full_join(ed50) %>%
+  full_join(df) %>%
+  rename(ed50 = estimate) %>%
+  mutate(problem = "none")
+```
+
+# Plot dose response curves for each genotype
+```{r plot, fig.width = 10, fig.height = 10}
+ed50 <- ed50 %>%
+  mutate(geno = factor(tag_number))
+
+vals <- vals %>%
+  mutate(geno = fct_reorder(factor(tag_number), ed50, .fun = mean))
+
+ggplot(vals, aes(x = max_temp, y = fvfm)) +
+  geom_point() +
+  geom_line(aes(y = .fitted)) +
+  geom_vline(aes(xintercept = estimate), data = ed50, lty = 2) +
+  geom_text(aes(x = estimate, y = 0.05, label = round(estimate, 2)), data = ed50,
+            size = 2, nudge_x = -1.5) +
+  facet_wrap(~geno)
+```
+
+
+
+
