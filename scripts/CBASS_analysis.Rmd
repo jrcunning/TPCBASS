@@ -175,5 +175,10 @@ ggplot(vals, aes(x = max_temp, y = fvfm)) +
 ```
 
 
+```{r}
+ed50 %>%
+  select(tag_number, ed50 = estimate, std.error) %>%
+  write_csv(path = "data/processed/CBASS_ED50s.csv")
+```
 
 
