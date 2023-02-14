@@ -54,6 +54,10 @@ ipam_convert <- function(data) {
 corals <- readxl::read_xlsx("data/collection_metadata.xlsx") %>%
   janitor::clean_names()
 
+# Imprt coral identification data (morphology and mtORF)
+id <- read_csv("data/coral_id.csv") %>%
+  janitor::clean_names()
+
 # Import CBASS metadata (positions of corals on racks, and CBASS temperatures of each rack)
 rack_pos <- read_csv("data/CBASS/CBASS_rack_position_map.csv")
 rack_temp <- read_csv("data/CBASS/CBASS_rack_temp_map.csv")
@@ -174,11 +178,113 @@ ggplot(vals, aes(x = max_temp, y = fvfm)) +
   facet_wrap(~geno)
 ```
 
+# Data filtering/QC from dose-response curves
+```{r drc_diagnostics}
+# # Identify problematic data points based on cook's distance and residuals
+counts <- vals %>%
+  mutate(geno = tag_number) %>%
+  group_by(geno) %>%
+  summarise(n = sum(!is.na(fvfm)))
+dff <- vals %>%
+  mutate(geno = tag_number) %>%
+  left_join(counts) %>%
+  group_by(geno) %>%
+  mutate(cooksd.thresh = 4/n) %>%   # Calculate cook's distance threshold as 4/n
+  mutate(max_to_remove = floor(n * 0.2)) %>%
+  ungroup() %>%
+  mutate(problem = case_when(.cooksd > cooksd.thresh ~ "high cook's distance",
+                             TRUE ~ "none")) %>%
+  group_by(geno, outlier = problem %in% c("high cook's distance", "high residual")) %>%
+  mutate(n.outliers = n(),
+         rank.out = order(.cooksd, decreasing = TRUE)) %>%
+  ungroup() %>%
+  mutate(fvfm = case_when(outlier & rank.out <= max_to_remove ~ .fitted,
+                          TRUE ~ fvfm))
+
+# Refit models without problematic points
+fmods <- dff %>%
+  select(geno, max_temp, f, fm, fvfmraw, problem, fvfm) %>%
+  nest(data = c(max_temp, f, fm, fvfmraw, fvfm, problem)) %>%
+  # Fit the model to each coral
+  mutate(ll3 = map(data, tryll3)) %>%
+  # Get model parameters and fitted values/residuals
+  mutate(pars = map(ll3, tidy),
+         pred = map2(ll3, data, ~augment(.x, drop_na(.y, fvfm))))
+
+# Extract ed50 parameter values from model fits
+fed50 <- fmods %>%
+  select(geno, pars) %>%
+  unnest(pars) %>%
+  filter(term == "ED50")
+
+# Collect raw data, fitted values, and ed50 estimates
+fvals <- fmods %>%
+  select(geno, pred) %>%
+  unnest(pred) %>%
+  full_join(fed50) %>%
+  full_join(select(dff, geno, max_temp, f, fm, fvfmraw, problem, fvfm)) %>%
+  rename(ed50 = estimate)
+
+
+fed50 <- fed50 %>%
+  mutate(geno = factor(geno))
+
+fvals <- fvals %>%
+  mutate(geno = factor(geno)) %>%
+  mutate(geno = fct_reorder(geno, ed50, .fun = mean))
+
+# Plot filtered drcs
+ggplot(fvals, aes(x = max_temp, y = fvfm)) +
+  geom_point() +
+  geom_line(aes(y = .fitted)) +
+  geom_vline(aes(xintercept = estimate), data = fed50, lty = 2) +
+  geom_text(aes(x = estimate, y = 0.05, label = round(estimate, 2)), data = fed50,
+            size = 2, nudge_x = -1.5) +
+  facet_wrap(~geno)
+```
+
+
+```{r}
+# fvals <- left_join(fvals, mutate(corals, geno = factor(tag_number))) %>%
+#   filter(tpc2 == "Y")
+# fed50 <- left_join(fed50, mutate(corals, geno = tag_number)) %>%
+#   filter(tpc2 == "Y")
+# fvals <- fvals %>%
+#   mutate(geno = fct_reorder(factor(tag_number), ed50, .fun = mean))
+
+fvals <- fvals %>% left_join(mutate(id, geno = factor(number)))
+fed50 <- fed50 %>% left_join(mutate(id, geno = factor(number)))
+
+ggplot(fed50, aes(x = mt_orf, y = estimate, color = mt_orf)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2) +
+  labs(x = "mtORF", y = "ED50 (°C)") +
+  theme(legend.position = "none")
+
+
+# ANOVA on filtered ED50s and welch anova
+
+anova(lm(estimate ~ mt_orf, data = filter(fed50, !is.na(mt_orf))))
+bartlett.test(estimate ~ mt_orf, data = filter(fed50, !is.na(mt_orf)))
+oneway.test(estimate ~ mt_orf, data = filter(fed50, !is.na(mt_orf)), var.equal = FALSE)
+
+
+```
+
 
 ```{r}
 ed50 %>%
   select(tag_number, ed50 = estimate, std.error) %>%
   write_csv(path = "data/processed/CBASS_ED50s.csv")
+
+tpcbass <- ed50 %>%
+  mutate(tag_number = as.numeric(as.character(tag_number))) %>%
+  left_join(corals) %>%
+  filter(tpc2 == "Y")
+
+ggplot(tpcbass)
+
+hist(tpcbass$estimate)
 ```
 
 
