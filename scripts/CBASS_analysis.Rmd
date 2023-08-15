@@ -253,20 +253,22 @@ ggplot(fvals, aes(x = max_temp, y = fvfm)) +
 #   mutate(geno = fct_reorder(factor(tag_number), ed50, .fun = mean))
 
 fvals <- fvals %>% left_join(mutate(id, geno = factor(number)))
-fed50 <- fed50 %>% left_join(mutate(id, geno = factor(number)))
+fed50 <- fed50 %>% left_join(mutate(id, geno = factor(number))) %>%
+  filter(tpcbass == "Yes")
 
-ggplot(fed50, aes(x = mt_orf, y = estimate, color = mt_orf)) +
+
+ggplot(fed50 ,aes(x = mt_orf, y = estimate, color = mt_orf)) +
   geom_boxplot() +
   geom_jitter(width = 0.2) +
   labs(x = "mtORF", y = "ED50 (°C)") +
   theme(legend.position = "none")
 
 
-# ANOVA on filtered ED50s and welch anova
-
-anova(lm(estimate ~ mt_orf, data = filter(fed50, !is.na(mt_orf))))
+# ANOVA on filtered ED50s
+mod <- lm(estimate ~ mt_orf, data = filter(fed50, !is.na(mt_orf)))
+anova(mod)
+emmeans::emmeans(mod, specs = "mt_orf")
 bartlett.test(estimate ~ mt_orf, data = filter(fed50, !is.na(mt_orf)))
-oneway.test(estimate ~ mt_orf, data = filter(fed50, !is.na(mt_orf)), var.equal = FALSE)
 
 
 ```
@@ -287,4 +289,40 @@ ggplot(tpcbass)
 hist(tpcbass$estimate)
 ```
 
+
+
+### Fit DRCs for haplotype groups instead of individuals
+```{r}
+# Fit model to each group, get parameters, fitted values, and residuals
+df2 <- df %>% left_join(mutate(id, tag_number = number)) %>%
+  filter(tpcbass == "Yes") %>%
+  select(mt_orf, tag_number, date, max_temp, f, fm, fvfmraw, fvfm)
+
+modn <- drm(fvfm ~ max_temp, data = df2,
+    fct = LL.3(names = c("hill", "max", "ED50")))
+mod <- drm(fvfm ~ max_temp, curveid = mt_orf, data = df2,
+    fct = LL.3(names = c("hill", "max", "ED50")))
+anova(mod, modn, test = "Chisq")
+AIC(mod, modn)
+
+  
+
+```
+
+
+# Write results to file
+```{r}
+fed50 %>%
+  select(fragment_id_1, mt_orf, estimate, std.error) %>%
+  write_csv("data/processed/CBASS_ED50s_ind.csv")
+
+tidy(mod) %>%
+  filter(term == "ED50") %>%
+  mutate(group = case_when(curve == "P" ~ "P_verrucosa_Haplotype_3b",
+                           curve == "Haplotype" ~ "Haplotype_1a")) %>%
+  select(group, ed50 = estimate, std.error) %>%
+  write_csv("data/processed/CBASS_ED50s_grp.csv")
+
+  
+```
 
