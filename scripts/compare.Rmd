@@ -1,0 +1,58 @@
+---
+title: "compare_cbass_tpc"
+author: "ross"
+date: "4/10/2023"
+output: html_document
+---
+
+# Import data
+
+```{r}
+library(tidyverse)
+
+
+# Import ED50s
+ed50_ind <- read.csv("data/processed/CBASS_ED50s_ind.csv") %>%
+  mutate(geno = fragment_id_1)
+ed50_grp <- read.csv("data/processed/CBASS_ED50s_grp.csv") %>%
+  mutate(mtORF = group)
+
+# Import TPC parameters
+tpc_ind <- read.csv("data/processed/TPC_params_ind.csv") %>%
+  mutate(geno = fragment_ID)
+tpc_grp <- read.csv("data/processed/TPC_params_grp.csv")
+
+# Join datasets
+ind <- full_join(ed50_ind, tpc_ind)
+grp <- full_join(ed50_grp, tpc_grp)
+```
+
+```{r}
+# Look for correlations
+ggplot(grp, aes(x = topt, y = ed50)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = ed50 - std.error, ymax = ed50 + std.error), width = 0.1)
+
+ggplot(ind, aes(x = topt, y = estimate)) + geom_point() +
+  geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error))
+```
+
+
+```{r}
+d_params <- read_csv("data/processed/TPC_params.csv")
+
+test <- fed50 %>%
+  mutate(fragment_ID = fragment_id_1) %>%
+  full_join(d_params)
+
+test %>%
+  # filter(rss < 0.02) %>%
+  # filter(topt > 22) %>%
+  select(estimate, topt, rmax) %>%
+  pairs()
+
+test %>%
+  select(fragment_ID, estimate, topt, rmax) %>%
+  arrange(topt) %>%
+  print(n = nrow(.))
+```
