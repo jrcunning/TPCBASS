@@ -32,14 +32,6 @@ theme_custom <- function() {
     )
 }
 
-# # Labeller for treatments
-# treatment_labeller <- function(variable, value){
-#   return(list(
-#   'Normal'="High light",
-#   'lowLight'="Low light")[value])
-# }
-# 
-
 # Function to pivot IPAM data to long form with column for AOI
 ipam_convert <- function(data) {
   data %>% select_if(~ !any(is.na(.))) %>%
@@ -54,8 +46,8 @@ ipam_convert <- function(data) {
 corals <- readxl::read_xlsx("data/collection_metadata.xlsx") %>%
   janitor::clean_names()
 
-# Imprt coral identification data (morphology and mtORF)
-id <- read_csv("data/coral_id.csv") %>%
+# Import coral identification data (morphology and mtORF)
+id <- read_csv("data/morphology.csv") %>%
   janitor::clean_names()
 
 # Import CBASS metadata (positions of corals on racks, and CBASS temperatures of each rack)
@@ -79,7 +71,7 @@ md <- md %>%
 # Import I-PAM data
 ```{r}
 # Import PAM data
-# List PAM files from 2021-09-06
+# List PAM files
 pamfiles <- list.files(path = "data/CBASS", pattern = "(^\\d).*.csv", 
                        recursive = TRUE, full.names = TRUE)
 
@@ -245,48 +237,49 @@ ggplot(fvals, aes(x = max_temp, y = fvfm)) +
 
 
 ```{r}
-# fvals <- left_join(fvals, mutate(corals, geno = factor(tag_number))) %>%
-#   filter(tpc2 == "Y")
-# fed50 <- left_join(fed50, mutate(corals, geno = tag_number)) %>%
-#   filter(tpc2 == "Y")
-# fvals <- fvals %>%
-#   mutate(geno = fct_reorder(factor(tag_number), ed50, .fun = mean))
+# Join individual genotype DRC parameters with haplotype and morphology group metadata
+fvals2 <- fvals %>% left_join(mutate(id, geno = factor(number)))
+fed502 <- fed50 %>% left_join(mutate(id, geno = factor(number)))# %>%
+  #filter(tpcbass == "Yes")
 
-fvals <- fvals %>% left_join(mutate(id, geno = factor(number)))
-fed50 <- fed50 %>% left_join(mutate(id, geno = factor(number))) %>%
-  filter(tpcbass == "Yes")
+# Which corals CBASSed have no haplotype info?
+fed50 %>% left_join(mutate(id, geno = factor(number))) %>% 
+  select(geno, estimate, mt_orf) %>% 
+  print(n = nrow(.))
 
-
-ggplot(fed50 ,aes(x = mt_orf, y = estimate, color = mt_orf)) +
+# Plot ED50 values by haplotype group
+ggplot(fed502 ,aes(x = mt_orf, y = estimate, color = mt_orf)) +
   geom_boxplot() +
   geom_jitter(width = 0.2) +
   labs(x = "mtORF", y = "ED50 (°C)") +
   theme(legend.position = "none")
 
-
-# ANOVA on filtered ED50s
-mod <- lm(estimate ~ mt_orf, data = filter(fed50, !is.na(mt_orf)))
+# ANOVA on filtered ED50s between haplotype groups
+mod <- lm(estimate ~ mt_orf, data = filter(fed502, !is.na(mt_orf)))
 anova(mod)
 emmeans::emmeans(mod, specs = "mt_orf")
-bartlett.test(estimate ~ mt_orf, data = filter(fed50, !is.na(mt_orf)))
+bartlett.test(estimate ~ mt_orf, data = filter(fed502, !is.na(mt_orf)))
 
-
+# Significant difference-- Haplotype 1a have higher mean ED50 than Haplotype 3b colonies
+# Mean of Hap1a ED50 = 36.1, Mean Hap3b ED50 = 35.8
 ```
 
 
 ```{r}
-ed50 %>%
-  select(tag_number, ed50 = estimate, std.error) %>%
+# Write filtered/QCd ED50 values to file
+fed50 %>%
+  select(geno, ed50 = estimate, std.error) %>%
   write_csv(path = "data/processed/CBASS_ED50s.csv")
 
-tpcbass <- ed50 %>%
-  mutate(tag_number = as.numeric(as.character(tag_number))) %>%
-  left_join(corals) %>%
-  filter(tpc2 == "Y")
-
-ggplot(tpcbass)
-
-hist(tpcbass$estimate)
+# Joining with TPC data -- moved to compare.Rmd script
+# tpcbass <- fed50 %>%
+#   mutate(tag_number = as.numeric(as.character(tag_number))) %>%
+#   left_join(corals) %>%
+#   filter(tpc2 == "Y")
+# 
+# ggplot(tpcbass)
+# 
+# hist(tpcbass$estimate)
 ```
 
 
@@ -294,7 +287,7 @@ hist(tpcbass$estimate)
 ### Fit DRCs for haplotype groups instead of individuals
 ```{r}
 # Fit model to each group, get parameters, fitted values, and residuals
-df2 <- df %>% left_join(mutate(id, tag_number = number)) %>%
+df2 <- dff %>% left_join(mutate(id, tag_number = number)) %>%
   filter(tpcbass == "Yes") %>%
   select(mt_orf, tag_number, date, max_temp, f, fm, fvfmraw, fvfm)
 
@@ -305,7 +298,9 @@ mod <- drm(fvfm ~ max_temp, curveid = mt_orf, data = df2,
 anova(mod, modn, test = "Chisq")
 AIC(mod, modn)
 
-  
+# Significant difference between mt_orf groups when DRC fitted to each group
+# Haplotype 1a ED50 = 35.86, Haplotype 3b ED50 = 35.53 (with data filterd post-individal DRCs)
+# Haplotype 1a ED50 = 35.85, Haplotype 3b ED50 = 35.57 (with unfiltered/all datapoints)
 
 ```
 
