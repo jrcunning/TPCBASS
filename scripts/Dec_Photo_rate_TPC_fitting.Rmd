@@ -9,40 +9,17 @@ output: html_document
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
-## install packages if you dont already have them in your library
-if (!require("devtools")) install.packages("devtools")
-if (!require("furrr")) install.packages("furrr")
-if (!require("future")) install.packages("future")
-if (!require("tidyverse")) install.packages("tidyverse")
-if (!require("gridExtra")) install.packages("gridExtra")
-if (!require("ggpubr")) install.packages("ggpubr")
-if (!require("lubridate")) install.packages("lubridate")
-if (!require("cowplot")) install.packages("cowplot")
-if (!require("ggstatsplot")) install.packages("ggstatsplot")
-if ("rTPC" %in% rownames(installed.packages()) == 'FALSE') remotes::install_github("padpadpadpad/rTPC")
-if ("nls.multstart" %in% rownames(installed.packages()) == 'FALSE') install.packages('nls.multstart')
-if ("broom" %in% rownames(installed.packages()) == 'FALSE') install.packages('broom') 
-
-## load libraries
-library('devtools')
-library('tidyverse')
-library('gridExtra')
-library('ggpubr')
-library('lubridate')
-library('cowplot')
-library('ggstatsplot')
 library('rTPC')
 library('nls.multstart')
-library('broom')
-library('car')
-library('scales')
-library('future') ## libraries for parallel processing
-library('furrr') ## libraries for parallel processing
+library(tidyverse)
+library(broom)
 ```
 
 ## Import data
 ```{r, warning = FALSE}
 Photodata <- read.csv("data/TPC/Dec_Photo_extracted_rates.csv")
+# Try May photodata?
+Photodata <- read.csv("~/Downloads/May_Photo_extracted_rates.csv")
 ```
 
 TPC fitting 
@@ -63,6 +40,7 @@ get_model_names()
 
 # get start vals
 start_vals <- get_start_vals(Photodata$temp,Photodata$transformed.rate, model_name = 'sharpeschoolhigh_1981')
+start_vals[2] <- 0.01
 
 # get limits
 low_lims <- get_lower_lims(Photodata$temp,Photodata$transformed.rate, model_name = 'sharpeschoolhigh_1981')
@@ -112,10 +90,11 @@ glimpse(d_preds)
 
 
 ```{r}
+
 ggplot(d_preds) +
   geom_line(aes(Temp.Cat, .fitted)) +
-  geom_point(aes(Temp.Cat, transformed.rate), Photodata) +
-  facet_wrap(~fragment_ID, scales = 'free_y', ncol = 6) +
+  geom_point(aes(Temp.Cat, transformed.rate), mutate(Photodata, fragment_ID = fragment_ID...1)) +
+  facet_wrap(~fragment_ID, ncol = 6) +
   theme_bw() +
   theme(legend.position = 'none') +
   scale_color_brewer(type = 'qual', palette = 2) +
@@ -128,10 +107,74 @@ ggplot(d_preds) +
 ```
 
 ```{r}
-d_params <- pivot_longer(d_fits, names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>%
-  mutate(params = map(fit, calc_params)) %>%
-  select(fragment_ID, params) %>%
+d_params1 <- pivot_longer(d_fits, names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>%
+  mutate(params = map(fit, calc_params),
+         rss = map_dbl(fit, deviance)) 
+d_params1 %>% arrange(rss)
+
+#### Filter Topt data based on quality of fit?
+d_params <- d_params1 %>%
+  #filter(rss < 0.01) %>%
+  select(fragment_ID, rss, params) %>%
   unnest(params)
 
 glimpse(d_params)
+
+d_params
+write_csv(d_params, path = "data/processed/TPC_params_ind.csv")
 ```
+
+
+# Fit TPCs to haplotype groups instead of individual corals
+```{r}
+# fit  chosen model formulation in rTPC
+d_fits_groups <- Photodata %>% group_by(mtORF) %>% nest() %>%
+  mutate(sharpeschoolhigh = map(data, ~nls_multstart(transformed.rate~sharpeschoolhigh_1981(temp = Temp.Cat, r_tref,e,eh,th, tref = 28),
+                        data = .x,
+                        iter = c(3,3,3,3),
+                        start_lower = start_vals - 1,
+                        start_upper = start_vals + 1,
+                        lower = low_lims,
+                        upper = upper_lims,
+                        supp_errors = 'Y',
+                        convergence_count = FALSE)))
+
+d_preds_groups <- mutate(d_fits_groups, new_data = map(data, ~tibble(temp = seq(min(.x$temp), max(.x$temp), length.out = 50)))) %>%
+  # get rid of original data column
+  select(., -data) %>%
+  # stack models into a single column, with an id column for model_name
+  pivot_longer(., names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>%
+  # create new list column containing the predictions
+  # this uses both fit and new_data list columns
+  mutate(preds = map2(fit, new_data, ~augment(.x, new_data = .y))) %>%
+  # select only the columns we want to keep
+  select(mtORF, preds) %>%
+  # unlist the preds list column
+  unnest(preds)
+
+glimpse(d_preds_groups)
+d_preds_groups
+
+ggplot(d_preds_groups) +
+  geom_line(aes(Temp.Cat, .fitted)) +
+  geom_point(aes(Temp.Cat, transformed.rate), Photodata) +
+  facet_wrap(~mtORF) +
+  theme_bw() +
+  theme(legend.position = 'none') +
+  scale_color_brewer(type = 'qual', palette = 2) +
+  labs(x = 'Temperature (ºC)',
+       y = 'Metabolic rate',
+       title = 'All fitted thermal performance curves',
+       subtitle = 'sharpeschoolhigh in orange')
+
+d_params_groups <- pivot_longer(d_fits_groups, names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>%
+  mutate(params = map(fit, calc_params)) %>%
+  select(mtORF, params) %>%
+  unnest(params)
+
+glimpse(d_params_groups)
+
+d_params_groups
+write_csv(d_params_groups, path = "data/processed/TPC_params_grp.csv")
+```
+
