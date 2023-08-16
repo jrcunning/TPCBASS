@@ -18,7 +18,7 @@ ed50_grp <- read.csv("data/processed/CBASS_ED50s_grp.csv") %>%
   mutate(mtORF = group)
 
 # Import TPC parameters
-tpc_ind <- read.csv("data/processed/TPC_params_ind.csv") %>%
+tpc_ind <- read.csv("data/processed/TPC_Dec_Photo_params_ind_without25.csv") %>%
   mutate(geno = fragment_ID)
 tpc_grp <- read.csv("data/processed/TPC_params_grp.csv")
 
@@ -35,6 +35,9 @@ ggplot(grp, aes(x = topt, y = ed50)) +
 
 ggplot(ind, aes(x = topt, y = estimate)) + geom_point() +
   geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error))
+
+library(GGally)
+ggpairs(select(ind, estimate, rmax, topt, ctmin, ctmax, e, eh, thermal_safety_margin, thermal_tolerance, breadth))
 ```
 
 
