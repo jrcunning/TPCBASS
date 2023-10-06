@@ -17,11 +17,10 @@ library(broom)
 
 ## Import data
 ```{r, warning = FALSE}
-Photodata <- read.csv("data/TPC/Dec_Photo_Rawextracted_rates.csv")
+Photodata <- read.csv("data/Dec_Photo_Rawextracted_rates.csv")
 Photodata <- Photodata %>%
-  filter(Temp.Cat!=25)
-# Try May photodata?
-#Photodata <- read.csv("~/Downloads/May_Photo_extracted_rates.csv")
+  filter(Temp.Cat!=22)
+
 ```
 
 TPC fitting 
@@ -123,14 +122,24 @@ d_params <- d_params1 %>%
 glimpse(d_params)
 
 d_params
-write_csv(d_params, path = "data/processed/TPC_Dec_Photo_params_ind_without25.csv")
+write.csv(d_params, file = "data/processed/TPC_Dec_Photo_params_ind_without22.csv")
+
+d_params %>%
+ggplot(aes(x=Temp.Cat, y=ETR, color=Spat.ID))+
+  geom_point()+
+  geom_line()+
+  facet_wrap("species")
+  theme_bw()
+  
+
+  
 ```
 
 
 # Fit TPCs to haplotype groups instead of individual corals
 ```{r}
 # fit  chosen model formulation in rTPC
-d_fits_groups <- Photodata %>% group_by(mtORF) %>% nest() %>%
+d_fits_groups <- Photodata %>% group_by(species) %>% nest() %>%
   mutate(sharpeschoolhigh = map(data, ~nls_multstart(transformed.rate~sharpeschoolhigh_1981(temp = Temp.Cat, r_tref,e,eh,th, tref = 28),
                         data = .x,
                         iter = c(3,3,3,3),
@@ -150,7 +159,7 @@ d_preds_groups <- mutate(d_fits_groups, new_data = map(data, ~tibble(temp = seq(
   # this uses both fit and new_data list columns
   mutate(preds = map2(fit, new_data, ~augment(.x, new_data = .y))) %>%
   # select only the columns we want to keep
-  select(mtORF, preds) %>%
+  select(species, preds) %>%
   # unlist the preds list column
   unnest(preds)
 
@@ -160,7 +169,7 @@ d_preds_groups
 ggplot(d_preds_groups) +
   geom_line(aes(Temp.Cat, .fitted)) +
   geom_point(aes(Temp.Cat, transformed.rate), Photodata) +
-  facet_wrap(~mtORF) +
+  facet_wrap(~species) +
   theme_bw() +
   theme(legend.position = 'none') +
   scale_color_brewer(type = 'qual', palette = 2) +
@@ -171,12 +180,12 @@ ggplot(d_preds_groups) +
 
 d_params_groups <- pivot_longer(d_fits_groups, names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>%
   mutate(params = map(fit, calc_params)) %>%
-  select(mtORF, params) %>%
+  select(species, params) %>%
   unnest(params)
 
 glimpse(d_params_groups)
 
 d_params_groups
-write_csv(d_params_groups, path = "data/processed/TPC_params_grp.csv")
+write_csv(d_params_groups, path = "data/processed/TPC_Dec_Photo_params_grp.csv")
 ```
 
