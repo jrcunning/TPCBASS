@@ -17,9 +17,11 @@ library(broom)
 
 ## Import data
 ```{r, warning = FALSE}
-Photodata <- read.csv("data/TPC/Dec_Photo_extracted_rates.csv")
+Photodata <- read.csv("data/TPC/Dec_Photo_Rawextracted_rates.csv")
+Photodata <- Photodata %>%
+  filter(Temp.Cat!=25)
 # Try May photodata?
-Photodata <- read.csv("~/Downloads/May_Photo_extracted_rates.csv")
+#Photodata <- read.csv("~/Downloads/May_Photo_extracted_rates.csv")
 ```
 
 TPC fitting 
@@ -56,7 +58,7 @@ upper_lims
 ```{r}
 
 # fit  chosen model formulation in rTPC
-d_fits <- Photodata %>% group_by(fragment_ID...1) %>% nest() %>%
+d_fits <- Photodata %>% group_by(fragment_ID) %>% nest() %>%
   mutate(sharpeschoolhigh = map(data, ~nls_multstart(transformed.rate~sharpeschoolhigh_1981(temp = Temp.Cat, r_tref,e,eh,th, tref = 28),
                         data = .x,
                         iter = c(3,3,3,3),
@@ -93,7 +95,7 @@ glimpse(d_preds)
 
 ggplot(d_preds) +
   geom_line(aes(Temp.Cat, .fitted)) +
-  geom_point(aes(Temp.Cat, transformed.rate), mutate(Photodata, fragment_ID = fragment_ID...1)) +
+  geom_point(aes(Temp.Cat, transformed.rate), mutate(Photodata, fragment_ID = fragment_ID)) +
   facet_wrap(~fragment_ID, ncol = 6) +
   theme_bw() +
   theme(legend.position = 'none') +
@@ -121,7 +123,7 @@ d_params <- d_params1 %>%
 glimpse(d_params)
 
 d_params
-write_csv(d_params, path = "data/processed/TPC_params_ind.csv")
+write_csv(d_params, path = "data/processed/TPC_Dec_Photo_params_ind_without25.csv")
 ```
 
 

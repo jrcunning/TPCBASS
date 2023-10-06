@@ -18,7 +18,7 @@ library(tidyverse)
 
 ## Import data
 ```{r, warning = FALSE}
-Photodata <- read.csv("data/Dec_Photo_Rawextracted_rates.csv")
+Photodata <- read.csv("data/TPC/Dec_Photo_Rawextracted_rates.csv")
 Photodata$temp <- as.numeric(Photodata$Temp.Cat)
 Photodata <- Photodata %>%
   filter(Temp.Cat!=22)
