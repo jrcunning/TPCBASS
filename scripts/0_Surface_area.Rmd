@@ -23,7 +23,7 @@ TPC Curve Data
 ```{r}
 
 #load wax data
-wax.data <- read.csv("data/TPC/Dec_TPC_surface_area_data.csv", header=TRUE)
+wax.data <- read.csv("data/May_TPCBASS_surface_area_data.csv", header=TRUE)
 
 wax.data$delta.mass.g <- wax.data$weight2.g-wax.data$weight1.g
 stnds <- subset(wax.data, Sample=="Standard")
@@ -37,12 +37,12 @@ stnds$surface.area.cm2 <- 4*pi*(stnds$rad)^2
 stnd.curve <- lm(surface.area.cm2~delta.mass.g, data=stnds)
 plot(surface.area.cm2~delta.mass.g, data=stnds)
 stnd.curve$coefficients
-summary(stnd.curve)$r.squared #r-squared = 0.996
+summary(stnd.curve)$r.squared #r-squared 
 
 
 ```
 
-
+# May Samples
 ```{r}
 #Calculate surface area using the standard curve
 smpls <- subset(wax.data, Sample=="Coral")
@@ -63,5 +63,31 @@ range(stnds$surface.area.cm2)
 #Save the output for use in normalization for phys assays
 smpls%>%
   select(fragment_ID, surface.area.cm2)%>%
-    write_csv("data/TPC/Dec_TPC_surface.area.calc.csv")
+    write_csv("data/TPC/May_TPCBASS_surface.area.calc.csv")
+```
+
+# December Samples
+```{r}
+#Calculate surface area using the standard curve
+wax.data <- read.csv("data/Dec_TPCBASS_surface_area_data.csv", header=TRUE)
+wax.data$delta.mass.g <- wax.data$weight2.g-wax.data$weight1.g
+smpls <- subset(wax.data, Sample=="Coral")
+smpls$surface.area.cm2 <- stnd.curve$coefficients[2] * smpls$delta.mass.g + stnd.curve$coefficients[1]
+
+#select the samples only
+smpls <- smpls %>%
+  select(-Sample, -Diameter)
+
+smpls %>%
+  count(fragment_ID) %>% arrange(n)
+
+#check the range to make sure your samples fall within the range of the standards
+range(smpls$surface.area.cm2)
+hist(smpls$surface.area.cm2)
+range(stnds$surface.area.cm2)
+
+#Save the output for use in normalization for phys assays
+smpls%>%
+  select(fragment_ID, surface.area.cm2)%>%
+    write_csv("data/TPC/Dec_TPCBASS_surface.area.calc.csv")
 ```
