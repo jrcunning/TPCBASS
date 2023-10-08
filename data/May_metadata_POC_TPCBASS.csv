@@ -1,14 +1,14 @@
 ﻿fragment_ID,Number,Timepoint,ID,site,genus,Morphology,mtORF,PocHistone,species,TPCBASS
-POC-150,150,May,POC-150May,Manava,Pocillopora,grandis,Haplotype_1a,,P. grandis,Yes
+POC-150,150,May,POC-150May,Manava,Pocillopora,grandis,Haplotype_1a,P. grandis,P. grandis,Yes
 POC-154,154,May,POC-154May,Manava,Pocillopora,verrucosa,P verrucosa Haplotype 3b,NA,P. verrucosa,Yes
-POC-156,156,May,POC-156May,Manava,Pocillopora,grandis,Haplotype_1a,,P. grandis,Yes
+POC-156,156,May,POC-156May,Manava,Pocillopora,grandis,Haplotype_1a,P. grandis,P. grandis,Yes
 POC-159,159,May,POC-159May,Manava,Pocillopora,grandis,Haplotype_1a,,P. grandis,Yes
 POC-162,162,May,POC-162May,Manava,Pocillopora,verrucosa,P verrucosa Haplotype 3b,NA,P. verrucosa,Yes
-POC-165,165,May,POC-165May,Manava,Pocillopora,grandis,Haplotype_1a,,P. grandis,Yes
+POC-165,165,May,POC-165May,Manava,Pocillopora,grandis,Haplotype_1a,P. grandis,P. grandis,Yes
 POC-167,167,May,POC-167May,Manava,Pocillopora,grandis,Haplotype_1a,P grandis,P. grandis,Yes
-POC-168,168,May,POC-168May,Manava,Pocillopora,grandis,Haplotype_1a,,P. grandis,Yes
+POC-168,168,May,POC-168May,Manava,Pocillopora,grandis,Haplotype_1a,P. grandis,P. grandis,Yes
 POC-169,169,May,POC-169May,Manava,Pocillopora,verrucosa,P verrucosa Haplotype 3b,NA,P. verrucosa,Yes
 POC-175,175,May,POC-175May,Manava,Pocillopora,verrucosa,P verrucosa Haplotype 3b,NA,P. verrucosa,Yes
-POC-178,178,May,POC-178May,Manava,Pocillopora,grandis,Unk long Branch off  Hap 1a,,P. grandis,Yes
+POC-178,178,May,POC-178May,Manava,Pocillopora,grandis,Unk long Branch off  Hap 1a,P. grandis,P. grandis,Yes
 POC-179,179,May,POC-179May,Manava,Pocillopora,verrucosa,P verrucosa Haplotype 3b,NA,P. verrucosa,Yes
 POC-181,181,May,POC-181May,Manava,Pocillopora,verrucosa,P verrucosa Haplotype 3b,NA,P. verrucosa,Yes
