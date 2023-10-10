@@ -1,61 +1,114 @@
 ---
 title: "compare_cbass_tpc"
 author: "ross"
-date: "4/10/2023"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: html_document
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
 
 # Import data
 
 ```{r}
 library(tidyverse)
+library(ggpubr)
+library(broom)
 
 
 # Import ED50s
 ed50_ind <- read.csv("data/processed/CBASS_ED50s_ind.csv") %>%
-  mutate(geno = fragment_id_1)
+  mutate(fragment_ID = fragment_id_1,
+         ed50 = estimate)  %>%
+  mutate(species = case_when(mt_orf == "P_verrucosa_Haplotype_3b" ~ "P. verrucosa",
+                             mt_orf == "Haplotype_1a" ~ "P. grandis"))
 ed50_grp <- read.csv("data/processed/CBASS_ED50s_grp.csv") %>%
-  mutate(mtORF = group)
+  mutate(species = case_when(group == "P_verrucosa_Haplotype_3b" ~ "P. verrucosa",
+                             group == "Haplotype_1a" ~ "P. grandis"))
 
-# Import TPC parameters
-tpc_ind <- read.csv("data/processed/TPC_Dec_Photo_params_ind_without25.csv") %>%
-  mutate(geno = fragment_ID)
-tpc_grp <- read.csv("data/processed/TPC_params_grp.csv")
+# Import TPC parameters - group fits
+tpc_dec_grp_with_22 <- read.csv("data/processed/TPC_Dec_Photo_params_grp_with_22.csv")
+tpc_dec_grp_without_22 <- read.csv("data/processed/TPC_Dec_Photo_params_grp_without_22.csv")
+tpc_may_grp_with_22 <- read.csv("data/processed/TPC_May_Photo_params_grp_with_22.csv")
+tpc_may_grp_without_22 <- read.csv("data/processed/TPC_May_Photo_params_grp_without_22.csv")
+# Combine group fits
+tpc_grp <- bind_rows(.id = "tpc",
+                     dec22 = tpc_dec_grp_with_22, decno22 = tpc_dec_grp_without_22, 
+                     may22 = tpc_may_grp_with_22, mayno22 = tpc_may_grp_without_22) %>%
+  pivot_longer(cols = 3:13, names_to = "param")
 
-# Join datasets
-ind <- full_join(ed50_ind, tpc_ind)
-grp <- full_join(ed50_grp, tpc_grp)
+# Import TPC parameters - individual fits
+tpc_dec_ind_with_22 <- read.csv("data/processed/TPC_Dec_Photo_params_ind_with_22.csv")
+tpc_dec_ind_without_22 <- read.csv("data/processed/TPC_Dec_Photo_params_ind_without_22.csv")
+tpc_may_ind_with_22 <- read.csv("data/processed/TPC_May_Photo_params_ind_with_22.csv")
+tpc_may_ind_without_22 <- read.csv("data/processed/TPC_May_Photo_params_ind_without_22.csv")
+# Combine individual fits
+tpc_ind <- bind_rows(.id = "tpc",
+                     dec22 = tpc_dec_ind_with_22, decno22 = tpc_dec_ind_without_22, 
+                     may22 = tpc_may_ind_with_22, mayno22 = tpc_may_ind_without_22) %>%
+    mutate(species = case_when(mtORF == "P verrucosa Haplotype 3b" ~ "P. verrucosa",
+                             mtORF == "Haplotype_1a" ~ "P. grandis")) %>%
+  select(tpc, species, fragment_ID, rss, rmax, topt, ctmax, ctmin, e, eh, q10, thermal_safety_margin) %>%
+  pivot_longer(cols = 4:12, names_to = "param")
+
+
+# Join CBASS and TPC group parameters
+grp <- inner_join(ed50_grp, tpc_grp)
+
+# Join CBASS and TPC individual parameters
+ind <- inner_join(ed50_ind, tpc_ind)
 ```
 
-```{r}
-# Look for correlations
-ggplot(grp, aes(x = topt, y = ed50)) +
-  geom_point() +
-  geom_errorbar(aes(ymin = ed50 - std.error, ymax = ed50 + std.error), width = 0.1)
 
-ggplot(ind, aes(x = topt, y = estimate)) + geom_point() +
-  geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error))
+# Compare TPC parameters with CBASS ED50 values
 
-library(GGally)
-ggpairs(select(ind, estimate, rmax, topt, ctmin, ctmax, e, eh, thermal_safety_margin, thermal_tolerance, breadth))
+### Species groups
+```{r, fig.width = 7, fig.height = 12}
+# Look for correlations in group data
+ggplot(grp, aes(x = ed50, y = value)) +
+  geom_point(aes(shape = species)) +
+  geom_errorbar(aes(xmin = ed50 - std.error, xmax = ed50 + std.error), width = 0) +
+  facet_grid(param ~ tpc, scales = "free") +
+  theme(legend.position = "bottom")
 ```
 
+### All individual corals
+```{r, fig.width = 7, fig.height = 12}
+# Look for correlations in individual data
+ggplot(ind, aes(x = ed50, y = value)) + 
+  geom_errorbar(aes(xmin = estimate - std.error, xmax = estimate + std.error)) +
+  geom_point(aes(color = fragment_ID, shape = species)) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", lwd = 0.5) +
+  stat_cor(method = "spearman") +
+  facet_grid(param ~ tpc, scales = "free") +
+  theme(legend.position = "bottom")
+```
 
+# Do individual coral CBASS ED50s differ between species?
 ```{r}
-d_params <- read_csv("data/processed/TPC_params.csv")
+library(emmeans)
+ed50_mod <- lm(ed50 ~ species, data = ed50_ind)
+anova(ed50_mod)
+emmeans(ed50_mod, specs = "species")
 
-test <- fed50 %>%
-  mutate(fragment_ID = fragment_id_1) %>%
-  full_join(d_params)
+# Yes -- P. grandis (35.9) > P. verrucosa (35.5); p = 0.0345
+```
 
-test %>%
-  # filter(rss < 0.02) %>%
-  # filter(topt > 22) %>%
-  select(estimate, topt, rmax) %>%
-  pairs()
+# Do individual coral TPC parameters differ between species?
+```{r}
+tpc_mods <- tpc_ind %>%
+  filter(!is.na(species), !param %in% c("ctmin", "q10")) %>%
+  group_by(tpc, param) %>%
+  nest() %>%
+  mutate(mod = map(data, ~ lm(value ~ species, data = .)),
+         p = map_dbl(mod, ~ tidy(.)$p.value[2]))
 
-test %>%
-  select(fragment_ID, estimate, topt, rmax) %>%
-  arrange(topt) %>%
+tpc_mods %>% 
+  arrange(p) %>%
   print(n = nrow(.))
+
+# No -- no significant differences between species for any parameters
+# In the fitting process for group TPC parameters, is there a way to test for statistically significant differences between speceis?
 ```
+
