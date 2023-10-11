@@ -265,25 +265,6 @@ bartlett.test(estimate ~ mt_orf, data = filter(fed502, !is.na(mt_orf)))
 ```
 
 
-```{r}
-# Write filtered/QCd ED50 values to file
-fed50 %>%
-  select(geno, ed50 = estimate, std.error) %>%
-  write_csv(path = "data/processed/CBASS_ED50s.csv")
-
-# Joining with TPC data -- moved to compare.Rmd script
-# tpcbass <- fed50 %>%
-#   mutate(tag_number = as.numeric(as.character(tag_number))) %>%
-#   left_join(corals) %>%
-#   filter(tpc2 == "Y")
-# 
-# ggplot(tpcbass)
-# 
-# hist(tpcbass$estimate)
-```
-
-
-
 ### Fit DRCs for haplotype groups instead of individuals
 ```{r}
 # Fit model to each group, get parameters, fitted values, and residuals
@@ -308,7 +289,8 @@ AIC(mod, modn)
 # Write results to file
 ```{r}
 fed50 %>%
-  select(fragment_id_1, mt_orf, estimate, std.error) %>%
+  mutate(fragment_ID = paste("POC", geno, sep = "-")) %>%
+  select(fragment_ID, estimate, std.error) %>%
   write_csv("data/processed/CBASS_ED50s_ind.csv")
 
 tidy(mod) %>%

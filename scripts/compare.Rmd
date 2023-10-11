@@ -18,11 +18,10 @@ library(broom)
 
 
 # Import ED50s
-ed50_ind <- read.csv("data/processed/CBASS_ED50s_ind.csv") %>%
-  mutate(fragment_ID = fragment_id_1,
-         ed50 = estimate)  %>%
-  mutate(species = case_when(mt_orf == "P_verrucosa_Haplotype_3b" ~ "P. verrucosa",
-                             mt_orf == "Haplotype_1a" ~ "P. grandis"))
+ed50_ind <- read_csv("data/processed/CBASS_ED50s_ind.csv") %>%
+  rename(ed50 = estimate)  %>%
+  # mutate(species = case_when(mt_orf == "P_verrucosa_Haplotype_3b" ~ "P. verrucosa",
+  #                            mt_orf == "Haplotype_1a" ~ "P. grandis"))
 ed50_grp <- read.csv("data/processed/CBASS_ED50s_grp.csv") %>%
   mutate(species = case_when(group == "P_verrucosa_Haplotype_3b" ~ "P. verrucosa",
                              group == "Haplotype_1a" ~ "P. grandis"))
@@ -77,7 +76,7 @@ ggplot(grp, aes(x = ed50, y = value)) +
 ```{r, fig.width = 7, fig.height = 12}
 # Look for correlations in individual data
 ggplot(ind, aes(x = ed50, y = value)) + 
-  geom_errorbar(aes(xmin = estimate - std.error, xmax = estimate + std.error)) +
+  geom_errorbar(aes(xmin = ed50 - std.error, xmax = ed50 + std.error)) +
   geom_point(aes(color = fragment_ID, shape = species)) +
   geom_smooth(method = "lm", se = FALSE, color = "black", lwd = 0.5) +
   stat_cor(method = "spearman") +
