@@ -338,28 +338,48 @@ anova(mod, modn, test = "Chisq")
 AIC(mod, modn)
 mod
 
+
 # Significant difference between mt_orf groups when DRC fitted to each group
 # Haplotype 1a ED50 = 35.86, Haplotype 3b ED50 = 35.53 (with data filterd post-individal DRCs)
 # Haplotype 1a ED50 = 35.85, Haplotype 3b ED50 = 35.57 (with unfiltered/all datapoints)
 
 #plot(mod)
 plot(mod, type = "all", xlim = c(33, 38))
-```
 
+# Bootstrap confidence intervals
+coef(mod)
+confints <- car::Boot(mod, R = 500, method = "case") %>%
+  confint(., method = 'bca', level = 0.9) %>%
+  as.data.frame() %>%
+  rename(conf_lower = 1, conf_upper = 2) %>%
+  rownames_to_column(., var = 'param') %>%
+  mutate(method = 'case bootstrap')
 
-# Write results to file
-```{r}
-fed50 %>%
-  mutate(fragment_ID = paste("POC", geno, sep = "-")) %>%
-  select(fragment_ID, estimate, std.error) %>%
-  write_csv("data/processed/CBASS_ED50s_ind.csv")
-
+# write results with conf to file...
 tidy(mod) %>%
   #filter(term == "ED50") %>%
   mutate(species = case_when(curve == "Pver" ~ "P. verrucosa",
                            curve == "Pgra" ~ "P. grandis")) %>%
   select(species, term, estimate, std.error) %>%
+  bind_cols(confints) %>%
+  select(species, term, estimate, conf_lower, conf_upper) %>%
   write_csv("data/processed/CBASS_allpars_grp.csv")
+```
+
+
+# Write results to file
+```{r, eval = F}
+# fed50 %>%
+#   mutate(fragment_ID = paste("POC", geno, sep = "-")) %>%
+#   select(fragment_ID, estimate, std.error) %>%
+#   write_csv("data/processed/CBASS_ED50s_ind.csv")
+# 
+# tidy(mod) %>%
+#   #filter(term == "ED50") %>%
+#   mutate(species = case_when(curve == "Pver" ~ "P. verrucosa",
+#                            curve == "Pgra" ~ "P. grandis")) %>%
+#   select(species, term, estimate, std.error) %>%
+#   write_csv("data/processed/CBASS_allpars_grp.csv")
 
   
 ```
