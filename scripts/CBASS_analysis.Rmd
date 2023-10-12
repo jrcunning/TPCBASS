@@ -346,18 +346,13 @@ mod
 #plot(mod)
 plot(mod, type = "all", xlim = c(33, 38))
 
-# Bootstrap confidence intervals
-coef(mod)
-confints <- car::Boot(mod, R = 500, method = "case") %>%
-  confint(., method = 'bca', level = 0.9) %>%
-  as.data.frame() %>%
-  rename(conf_lower = 1, conf_upper = 2) %>%
-  rownames_to_column(., var = 'param') %>%
-  mutate(method = 'case bootstrap')
+# Get confidence intervals
+confints <- confint(mod, level = 0.9, pool = FALSE) %>%
+  as_data_frame() %>%
+  rename(conf_lower = 1, conf_upper = 2)
 
 # write results with conf to file...
 tidy(mod) %>%
-  #filter(term == "ED50") %>%
   mutate(species = case_when(curve == "Pver" ~ "P. verrucosa",
                            curve == "Pgra" ~ "P. grandis")) %>%
   select(species, term, estimate, std.error) %>%
