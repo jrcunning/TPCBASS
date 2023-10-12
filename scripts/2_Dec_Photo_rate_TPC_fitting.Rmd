@@ -411,6 +411,81 @@ get_pars(rezende_fits) %>%
   write_csv(path = "data/processed/TPC_Dec_Photo_params_rezende_grp.csv")
 ```
 
+```{r}
+# Bootstrapping
+
+## Refit models using nlsLM and calculate parameters
+d_fits_groups2 <- rezende_fits %>%
+  mutate(fit_nlsLM = map2(data, model, 
+                          ~minpack.lm::nlsLM(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
+                                             data = .x,
+                                             start = coef(.y),
+                                             lower = low_lims,
+                                             upper = upper_lims,
+                                             weights = rep(1, times = nrow(.x)))),
+         params = map(fit_nlsLM, ~calc_params(.)))
+
+# Calculate confidence intervals on parameters by bootstrapping
+
+### P. grandis [[1]]
+fit_nlsLM_Pgra <- minpack.lm::nlsLM(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
+                                             data = rezende_fits$data[[1]],
+                                             start = coef(rezende_fits$model[[1]]),
+                                             lower = low_lims,
+                                             upper = upper_lims,
+                                             weights = rep(1, times = nrow(rezende_fits$data[[1]])))
+
+ci_extra_params_Pgra <- car::Boot(fit_nlsLM_Pgra, f = function(x){unlist(calc_params(x))}, 
+                                 labels = names(calc_params(fit_nlsLM_Pgra)), 
+                                 R = 200, method = 'case') %>%
+  confint(., method = 'bca', level = 0.9) %>%
+  as.data.frame() %>%
+  rename(conf_lower = 1, conf_upper = 2) %>%
+  rownames_to_column(., var = 'param') %>%
+  mutate(method = 'case bootstrap')
+
+### P. verrucosa [[1]]
+fit_nlsLM_Pver <- minpack.lm::nlsLM(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
+                                             data = rezende_fits$data[[2]],
+                                             start = coef(rezende_fits$model[[2]]),
+                                             lower = low_lims,
+                                             upper = upper_lims,
+                                             weights = rep(1, times = nrow(rezende_fits$data[[2]])))
+
+ci_extra_params_Pver <- car::Boot(fit_nlsLM_Pver, f = function(x){unlist(calc_params(x))}, 
+                             labels = names(calc_params(fit_nlsLM_Pver)), 
+                             R = 200, method = 'case') %>%
+  confint(., method = 'bca', level = 0.9) %>%
+  as.data.frame() %>%
+  rename(conf_lower = 1, conf_upper = 2) %>%
+  rownames_to_column(., var = 'param') %>%
+  mutate(method = 'case bootstrap')
+
+
+ci_extra_params <- bind_rows(.id = "species",
+                             `P. grandis` = ci_extra_params_Pgra, 
+                             `P. verrucosa` = ci_extra_params_Pver) 
+
+par_est <- rezende_fits %>%
+  mutate(params = map(model, ~calc_params(.))) %>%
+  select(species, params) %>%
+  unnest(params) %>%
+  pivot_longer(2:12, names_to = "param")
+
+res <- left_join(ci_extra_params, par_est)
+  
+ggplot(res, aes(species, value)) +
+  geom_point(size = 1) +
+  geom_linerange(aes(ymin = conf_lower, ymax = conf_upper)) +
+  theme_bw() +
+  facet_wrap(~param, scales = 'free') +
+  scale_x_discrete('') +
+  labs(title = 'Calculation of confidence intervals for extra parameters',
+       subtitle = 'For the bacteria TPC; using case resampling')
+
+
+write_csv(res, path = "data/processed/TPC_Dec_Photo_params_rezende_grp_confint.csv")
+```
 
 
 
