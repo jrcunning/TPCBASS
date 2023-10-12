@@ -205,7 +205,7 @@ d_fits_groups <- Photodata %>% group_by(species) %>% nest() %>%
                         start_lower = start_vals - 1,
                         start_upper = start_vals + 1,
                         lower = low_lims,
-                        upper = upper_lims,
+                        upper = upper_lims, 
                         supp_errors = 'Y',
                         convergence_count = FALSE)))
 
@@ -246,6 +246,77 @@ glimpse(d_params_groups)
 d_params_groups
 write_csv(d_params_groups, path = "data/processed/TPC_May_Photo_params_rezende_grp.csv")
 
+
+# Bootstrapping
+
+## Refit models using nlsLM and calculate parameters
+d_fits_groups2 <- d_fits_groups %>%
+  mutate(fit_nlsLM = map2(data, rezende, 
+                          ~minpack.lm::nlsLM(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
+                                             data = .x,
+                                             start = coef(.y),
+                                             lower = low_lims,
+                                             upper = upper_lims,
+                                             weights = rep(1, times = nrow(.x)))),
+         params = map(fit_nlsLM, ~calc_params(.)))
+
+# Calculate confidence intervals on parameters by bootstrapping
+
+### P. grandis [[1]]
+fit_nlsLM_Pgra <- minpack.lm::nlsLM(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
+                                             data = d_fits_groups$data[[1]],
+                                             start = coef(d_fits_groups$rezende[[1]]),
+                                             lower = low_lims,
+                                             upper = upper_lims,
+                                             weights = rep(1, times = nrow(d_fits_groups$data[[1]])))
+extra_params_Pgra <- calc_params(fit_nlsLM_Pgra) %>%
+  pivot_longer(everything(), names_to =  'param', values_to = 'estimate')
+
+ci_extra_paramsPgra <- car::Boot(fit_nlsLM_Pgra, f = function(x){unlist(calc_params(x))}, 
+                             labels = names(calc_params(fit_nlsLM_Pgra)), 
+                             R = 200, method = 'case') %>%
+  confint(., method = 'bca') %>%
+  as.data.frame() %>%
+  rename(conf_lower = 1, conf_upper = 2) %>%
+  rownames_to_column(., var = 'param') %>%
+  mutate(method = 'case bootstrap')
+  
+ci_extra_params_Pgra <- left_join(ci_extra_paramsPgra, extra_params_Pgra)
+
+### P. verrucosa [[1]]
+fit_nlsLM_Pver <- minpack.lm::nlsLM(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
+                                             data = d_fits_groups$data[[2]],
+                                             start = coef(d_fits_groups$rezende[[2]]),
+                                             lower = low_lims,
+                                             upper = upper_lims,
+                                             weights = rep(1, times = nrow(d_fits_groups$data[[2]])))
+extra_params_Pver <- calc_params(fit_nlsLM_Pver) %>%
+  pivot_longer(everything(), names_to =  'param', values_to = 'estimate')
+
+ci_extra_paramsPver <- car::Boot(fit_nlsLM_Pver, f = function(x){unlist(calc_params(x))}, 
+                             labels = names(calc_params(fit_nlsLM_Pver)), 
+                             R = 200, method = 'case') %>%
+  confint(., method = 'bca') %>%
+  as.data.frame() %>%
+  rename(conf_lower = 1, conf_upper = 2) %>%
+  rownames_to_column(., var = 'param') %>%
+  mutate(method = 'case bootstrap')
+  
+ci_extra_params_Pver <- left_join(ci_extra_paramsPver, extra_params_Pver)
+
+
+ci_extra_params <- bind_rows(.id = "species",
+                             Pgra = ci_extra_params_Pgra, 
+                             Pver = ci_extra_params_Pver)
+  
+ggplot(ci_extra_params, aes(species, estimate)) +
+  geom_point(size = 1) +
+  geom_linerange(aes(ymin = conf_lower, ymax = conf_upper)) +
+  theme_bw() +
+  facet_wrap(~param, scales = 'free') +
+  scale_x_discrete('') +
+  labs(title = 'Calculation of confidence intervals for extra parameters',
+       subtitle = 'For the bacteria TPC; using case resampling')
 ```
 
 
