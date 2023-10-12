@@ -408,7 +408,7 @@ plot_fit(rezende_fits) + labs(title = "rezende")
 get_pars(rezende_fits)
 
 get_pars(rezende_fits) %>%
-  write_csv(path = "data/processed/TPC_Dec_rezende_grp.csv")
+  write_csv(path = "data/processed/TPC_Dec_Photo_params_rezende_grp.csv")
 ```
 
 
