@@ -198,33 +198,215 @@ ggplot(aes(x=species, y=value, color=species))+
 
 # Fit TPCs to species groups instead of individual corals
 ```{r}
-# fit  chosen model formulation in rTPC
-d_fits_groups <- Photodata %>% group_by(species) %>% nest() %>%
-  mutate(sharpeschoolhigh = map(data, ~nls_multstart(transformed.rate~sharpeschoolhigh_1981(temp = Temp.Cat, r_tref,e,eh,th, tref = 28),
+# Function to get fitted values and plot
+plot_fit <- function(fits) {
+  pgra <- augment(fits$model[[1]])
+  pver <- augment(fits$model[[2]])
+  d_preds_groups <- bind_rows(`P. grandis` = pgra, `P. verrucosa` = pver, .id = "species")
+  plot <- ggplot(d_preds_groups) +
+    geom_line(aes(Temp.Cat, .fitted)) +
+    geom_point(aes(Temp.Cat, transformed.rate), Photodata) +
+    facet_wrap(~species) +
+    theme_bw() +
+    theme(legend.position = 'none') +
+    scale_color_brewer(type = 'qual', palette = 2) +
+    labs(x = 'Temperature (ºC)',
+         y = 'Metabolic rate',
+         title = 'Dec fitted thermal performance curves')
+  return(plot)
+}
+
+# FUnction to get parameters from fit
+get_pars <- function(fits) {
+  params <- pivot_longer(fits, names_to = 'model_name', values_to = 'fit', model) %>%
+    mutate(params = map(fit, calc_params),
+           AIC = map(fit, AIC)) %>%
+    select(species, params, AIC) %>%
+    unnest(params, AIC)
+  params
+}
+
+```
+
+```{r}
+# fit  SPAIN formulation in rTPC
+spain_fits <- Photodata %>% group_by(species) %>% nest() %>%
+  mutate(model = map(data, ~nls_multstart(transformed.rate~spain_1982(temp = Temp.Cat, a, b, c, r0),
                         data = .x,
-                        iter = c(3,3,3,3),
-                        start_lower = start_vals - 1,
-                        start_upper = start_vals + 1,
-                        lower = low_lims,
-                        upper = upper_lims,
+                        iter = c(5,5,5,5),
+                        start_lower = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'spain_1982') - 1,
+                        start_upper = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'spain_1982') + 1,
                         supp_errors = 'Y',
                         convergence_count = FALSE)))
 
-d_preds_groups <- mutate(d_fits_groups, new_data = map(data, ~tibble(temp = seq(min(.x$temp), max(.x$temp), length.out = 50)))) %>%
-  # get rid of original data column
-  select(., -data) %>%
-  # stack models into a single column, with an id column for model_name
-  pivot_longer(., names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>%
-  # create new list column containing the predictions
-  # this uses both fit and new_data list columns
-  mutate(preds = map2(fit, new_data, ~augment(.x, new_data = .y))) %>%
-  # select only the columns we want to keep
-  select(species, preds) %>%
-  # unlist the preds list column
-  unnest(preds)
 
-glimpse(d_preds_groups)
-d_preds_groups
+plot_fit(spain_fits) + labs(title = "Spain")
+get_pars(spain_fits)
+
+
+# Boatman can't go negative...
+
+# fit Hinshelwood formulation in rTPC
+hinshelwood_fits <- Photodata %>% group_by(species) %>% nest() %>%
+  mutate(model = map(data, ~nls_multstart(transformed.rate~hinshelwood_1947(temp = Temp.Cat, a,e,b,eh),
+                        data = .x,
+                        iter = c(5,5,5,5),
+                        start_lower = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'hinshelwood_1947') - 1,
+                        start_upper = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'hinshelwood_1947') + 1,
+                        supp_errors = 'Y',
+                        convergence_count = FALSE)))
+
+
+plot_fit(hinshelwood_fits) + labs(title = "Hinshelwood")
+get_pars(hinshelwood_fits)
+
+
+
+# fit Joehnk formulation in rTPC
+joehnk_fits <- Photodata %>% group_by(species) %>% nest() %>%
+  mutate(model = map(data, ~nls_multstart(transformed.rate~joehnk_2008(temp = Temp.Cat, rmax, topt, a, b, c),
+                        data = .x,
+                        iter = c(5,5,5,5,5),
+                        start_lower = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'joehnk_2008') - 1,
+                        start_upper = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'joehnk_2008') + 1,
+                        supp_errors = 'Y',
+                        convergence_count = FALSE)))
+
+
+plot_fit(joehnk_fits) + labs(title = "joehnk")
+get_pars(joehnk_fits)
+
+
+# fit Kamykowski formulation in rTPC
+kamykowski_fits <- Photodata %>% group_by(species) %>% nest() %>%
+  mutate(model = map(data, ~nls_multstart(transformed.rate~kamykowski_1985(temp = Temp.Cat, tmin, tmax, a, b, c),
+                        data = .x,
+                        iter = c(5,5,5,5,5),
+                        start_lower = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'kamykowski_1985') - 1,
+                        start_upper = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'kamykowski_1985') + 1,
+                        supp_errors = 'Y',
+                        convergence_count = FALSE)))
+
+
+plot_fit(kamykowski_fits) + labs(title = "kamykowski")
+get_pars(kamykowski_fits)
+
+
+# fit lactin2 formulation in rTPC
+lactin2_fits <- Photodata %>% group_by(species) %>% nest() %>%
+  mutate(model = map(data, ~nls_multstart(transformed.rate~lactin2_1995(temp = Temp.Cat, a, b, tmax, delta_t),
+                        data = .x,
+                        iter = c(5,5,5,5),
+                        start_lower = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'lactin2_1995') - 1,
+                        start_upper = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'lactin2_1995') + 1,
+                        supp_errors = 'Y',
+                        convergence_count = FALSE)))
+
+
+plot_fit(lactin2_fits) + labs(title = "lactin2")
+get_pars(lactin2_fits)
+
+# fit lrf formulation in rTPC
+lrf_fits <- Photodata %>% group_by(species) %>% nest() %>%
+  mutate(model = map(data, ~nls_multstart(transformed.rate~lrf_1991(temp = Temp.Cat, rmax, topt, tmin, tmax),
+                        data = .x,
+                        iter = c(5,5,5,5),
+                        start_lower = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'lrf_1991') - 1,
+                        start_upper = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'lrf_1991') + 1,
+                        supp_errors = 'Y',
+                        convergence_count = FALSE)))
+
+
+plot_fit(lrf_fits) + labs(title = "lrf")
+get_pars(lrf_fits)
+
+# fit rezende formulation in rTPC
+rezende_fits <- Photodata %>% group_by(species) %>% nest() %>%
+  mutate(model = map(data, ~nls_multstart(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
+                        data = .x,
+                        iter = c(5,5,5,5),
+                        start_lower = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'rezende_2019') - 1,
+                        start_upper = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'rezende_2019') + 1,
+                        supp_errors = 'Y',
+                        convergence_count = FALSE)))
+
+
+plot_fit(rezende_fits) + labs(title = "rezende")
+get_pars(rezende_fits)
+
+# fit thomas formulation in rTPC
+thomas_fits <- Photodata %>% group_by(species) %>% nest() %>%
+  mutate(model = map(data, ~nls_multstart(transformed.rate~thomas_2012(temp = Temp.Cat, a, b, c, topt),
+                        data = .x,
+                        iter = c(5,5,5,5),
+                        start_lower = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'thomas_2012') - 1,
+                        start_upper = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'thomas_2012') + 1,
+                        supp_errors = 'Y',
+                        convergence_count = FALSE)))
+
+
+plot_fit(thomas_fits) + labs(title = "thomas")
+get_pars(thomas_fits)
+
+# fit thomas2 formulation in rTPC
+thomas2_fits <- Photodata %>% group_by(species) %>% nest() %>%
+  mutate(model = map(data, ~nls_multstart(transformed.rate~thomas_2017(temp = Temp.Cat, a, b, c, d, e),
+                        data = .x,
+                        iter = c(5,5,5,5,5),
+                        start_lower = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'thomas_2017') - 1,
+                        start_upper = get_start_vals(.x$temp, .x$transformed.rate, model_name = 'thomas_2017') + 1,
+                        supp_errors = 'Y',
+                        convergence_count = FALSE)))
+
+
+plot_fit(thomas2_fits) + labs(title = "thomas2")
+get_pars(thomas2_fits)
+
+
+# Combine model pars
+allpars <- bind_rows(.id = "model",
+  spain = get_pars(spain_fits),
+  hinshelwood = get_pars(hinshelwood_fits),
+  joehnk = get_pars(joehnk_fits),
+  kamykowski = get_pars(kamykowski_fits),
+  lactin2 = get_pars(lactin2_fits),
+  lrf = get_pars(lrf_fits),
+  rezende = get_pars(rezende_fits),
+  thomas = get_pars(thomas_fits),
+  thomas2 = get_pars(thomas2_fits)
+)
+
+
+allpars %>%
+  pivot_longer(3:12, names_to = "variable", values_to = "value") %>%
+  filter(variable %in% c("breadth", "ctmax", "eh", "rmax", "topt")) %>%
+  filter(model %in% c("lactin2", "spain", "rezende")) %>%
+  ggplot(aes(x = species, y = value, color = model, shape = model)) +
+  geom_point() +
+  geom_line(aes(group = model, lwd = abs(AIC^3), alpha = 0.3)) +
+  facet_wrap(~variable, scales = "free")
+
+
+allpars %>%
+  group_by(model) %>%
+  summarise(AIC = sum(AIC)) %>%
+  arrange(AIC)
+
+allpars %>%
+  filter(model == "rezende") %>%
+  write_csv(path = "data/processed/TPC_Dec_rezende_grp.csv")
+
+# Get model parameters
+# summary(d_fits_groups$sharpeschoolhigh[[1]])
+# calc_params(d_fits_groups$sharpeschoolhigh[[1]])
+# get_e(d_fits_groups$sharpeschoolhigh[[1]])
+# summary(d_fits_groups$sharpeschoolhigh[[2]])
+# calc_params(d_fits_groups$sharpeschoolhigh[[2]])
+
+# Get fitted values
+pgra <- augment(d_fits_groups$model[[1]])
+pver <- augment(d_fits_groups$model[[2]])
+d_preds_groups <- bind_rows(`P. grandis` = pgra, `P. verrucosa` = pver, .id = "species")
 
 ggplot(d_preds_groups) +
   geom_line(aes(Temp.Cat, .fitted)) +
@@ -237,12 +419,13 @@ ggplot(d_preds_groups) +
        y = 'Metabolic rate',
        title = 'Dec fitted thermal performance curves')
 
-d_params_groups <- pivot_longer(d_fits_groups, names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>%
+d_params_groups <- pivot_longer(d_fits_groups, names_to = 'model_name', values_to = 'fit', model) %>%
   mutate(params = map(fit, calc_params)) %>%
   select(species, params) %>%
   unnest(params)
 
-glimpse(d_params_groups)
+glimpse(d_params_groups) %>%
+  as_tibble()
 
 d_params_groups
 write_csv(d_params_groups, path = "data/processed/TPC_Dec_Photo_params_grp_with_22.csv")
