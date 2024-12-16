@@ -117,6 +117,12 @@ df <- pam %>%
   pivot_wider(names_from = var, values_from = value) %>%
   mutate(fvfmraw = y_ii_, fvfm = y_ii_) %>%
   select(date, tag_number, max_temp, f, fm, fvfmraw, fvfm)
+# Average technical replicates
+df <- df %>%
+  group_by(date, tag_number, max_temp) %>%
+  summarize(fvfmraw = mean(fvfmraw),
+            fvfm = mean(fvfm)) %>%
+  ungroup()
 
 # Define function to fit 3-parameter LL model to data and return NULL if fitting error
 ll3 <- function(data) {
@@ -128,7 +134,7 @@ tryll3 <- possibly(ll3, otherwise = NULL)
 
 # Fit model to each coral, get parameters, fitted values, and residuals
 initmods <- df %>%
-  nest(data = c(date, max_temp, f, fm, fvfmraw, fvfm)) %>%
+  nest(data = c(date, max_temp, fvfmraw, fvfm)) %>%
   # Fit the model to each coral
   mutate(ll3 = map(data, tryll3)) %>%
   # Get model parameters and fitted values/residuals
@@ -140,6 +146,13 @@ ed50 <- initmods %>%
   select(tag_number, pars) %>%
   unnest(pars) %>%
   filter(term == "ED50")
+
+# Extract all drc parameters
+allpars <- initmods %>%
+  select(tag_number, pars) %>%
+  unnest(pars)
+
+write_csv(allpars, path = "data/processed/CBASS_allpars_ind.csv")
 
 hist(ed50$estimate, breaks = 30)
 
@@ -195,8 +208,8 @@ dff <- vals %>%
 
 # Refit models without problematic points
 fmods <- dff %>%
-  select(geno, max_temp, f, fm, fvfmraw, problem, fvfm) %>%
-  nest(data = c(max_temp, f, fm, fvfmraw, fvfm, problem)) %>%
+  select(geno, max_temp, fvfmraw, problem, fvfm) %>%
+  nest(data = c(max_temp, fvfmraw, fvfm, problem)) %>%
   # Fit the model to each coral
   mutate(ll3 = map(data, tryll3)) %>%
   # Get model parameters and fitted values/residuals
@@ -209,12 +222,19 @@ fed50 <- fmods %>%
   unnest(pars) %>%
   filter(term == "ED50")
 
+# Extract all drc parameters
+allfpars <- fmods %>%
+  select(tag_number = geno, pars) %>%
+  unnest(pars)
+
+write_csv(allfpars, path = "data/processed/CBASS_allfpars_ind.csv")
+
 # Collect raw data, fitted values, and ed50 estimates
 fvals <- fmods %>%
   select(geno, pred) %>%
   unnest(pred) %>%
   full_join(fed50) %>%
-  full_join(select(dff, geno, max_temp, f, fm, fvfmraw, problem, fvfm)) %>%
+  full_join(select(dff, geno, max_temp, fvfmraw, problem, fvfm)) %>%
   rename(ed50 = estimate)
 
 
@@ -233,72 +253,128 @@ ggplot(fvals, aes(x = max_temp, y = fvfm)) +
   geom_text(aes(x = estimate, y = 0.05, label = round(estimate, 2)), data = fed50,
             size = 2, nudge_x = -1.5) +
   facet_wrap(~geno)
+
 ```
 
 
 ```{r}
-# Join individual genotype DRC parameters with haplotype and morphology group metadata
+# Join individual genotype DRC parameters with species ID
 fvals2 <- fvals %>% left_join(mutate(id, geno = factor(number)))
 fed502 <- fed50 %>% left_join(mutate(id, geno = factor(number)))# %>%
   #filter(tpcbass == "Yes")
 
 # Which corals CBASSed have no haplotype info?
 fed50 %>% left_join(mutate(id, geno = factor(number))) %>% 
-  select(geno, estimate, mt_orf) %>% 
+  select(geno, estimate, species) %>% 
   print(n = nrow(.))
 
 # Plot ED50 values by haplotype group
-ggplot(fed502 ,aes(x = mt_orf, y = estimate, color = mt_orf)) +
+ggplot(fed502 ,aes(x = species, y = estimate, color = species)) +
   geom_boxplot() +
   geom_jitter(width = 0.2) +
   labs(x = "mtORF", y = "ED50 (°C)") +
   theme(legend.position = "none")
 
 # ANOVA on filtered ED50s between haplotype groups
-mod <- lm(estimate ~ mt_orf, data = filter(fed502, !is.na(mt_orf)))
+mod <- lm(estimate ~ species, data = filter(fed502, !is.na(species)))
 anova(mod)
-emmeans::emmeans(mod, specs = "mt_orf")
-bartlett.test(estimate ~ mt_orf, data = filter(fed502, !is.na(mt_orf)))
+emmeans::emmeans(mod, specs = "species")
+bartlett.test(estimate ~ species, data = filter(fed502, !is.na(species)))
 
 # Significant difference-- Haplotype 1a have higher mean ED50 than Haplotype 3b colonies
 # Mean of Hap1a ED50 = 36.1, Mean Hap3b ED50 = 35.8
+# Not sig when only 6 corals of each species (the number that were TPCd)
 ```
 
 
-### Fit DRCs for haplotype groups instead of individuals
+### Fit DRCs for species groups instead of individuals
 ```{r}
+# Prefiltering for outliers for each spp/temp
+df <- df %>%
+  left_join(mutate(id, tag_number = number)) %>%
+  mutate(group = paste0(species, "_", max_temp))
+#set quantile values
+q <- c(0.25, 0.75)
+
+# calculate quantile values by Temperature and Treatment groups
+Quants <- df %>%
+  group_by(species, max_temp) %>%
+  summarize(quant25 = quantile(fvfm, probs = q[1]),
+            quant75 = quantile(fvfm, probs = q[2]),
+            IQRbyGroup=IQR(fvfm))
+
+# add a group name by pasting Temperature and Treatment
+Quants$group <-paste0(Quants$species,"_", Quants$max_temp)
+
+#Calculate Quantile upper and lower ranges
+Quants$upper <-  Quants$quant75+1.5*Quants$IQRbyGroup # Upper Range
+Quants$lower <- Quants$quant25-1.5*Quants$IQRbyGroup # Lower Range
+
+#join outlier cutoffs with rate data
+df <- left_join(df, Quants, by="group")
+
+#remove outliers from rates
+x <- df %>%
+  filter(fvfm <= upper) %>%
+  filter(fvfm >= lower) #%>%
+  #filter(rate < 0.125)
+
+
+
 # Fit model to each group, get parameters, fitted values, and residuals
-df2 <- dff %>% left_join(mutate(id, tag_number = number)) %>%
+df2 <- x %>% #left_join(mutate(id, tag_number = number)) %>%
   filter(tpcbass == "Yes") %>%
-  select(mt_orf, tag_number, date, max_temp, f, fm, fvfmraw, fvfm)
+  select(species = species.x,  tag_number, date, max_temp = max_temp.x,  fvfmraw, fvfm) %>%
+  mutate(species2 = case_when(species == "P. grandis" ~ "Pgra",
+                              species == "P. verrucosa" ~ "Pver"))
 
 modn <- drm(fvfm ~ max_temp, data = df2,
     fct = LL.3(names = c("hill", "max", "ED50")))
-mod <- drm(fvfm ~ max_temp, curveid = mt_orf, data = df2,
+mod <- drm(fvfm ~ max_temp, curveid = species2, data = df2,
     fct = LL.3(names = c("hill", "max", "ED50")))
+augment(mod, df2) %>%
+  arrange(-.cooksd)
 anova(mod, modn, test = "Chisq")
 AIC(mod, modn)
+mod
+
 
 # Significant difference between mt_orf groups when DRC fitted to each group
 # Haplotype 1a ED50 = 35.86, Haplotype 3b ED50 = 35.53 (with data filterd post-individal DRCs)
 # Haplotype 1a ED50 = 35.85, Haplotype 3b ED50 = 35.57 (with unfiltered/all datapoints)
 
+#plot(mod)
+plot(mod, type = "all", xlim = c(33, 38))
+
+# Get confidence intervals
+confints <- confint(mod, level = 0.9, pool = FALSE) %>%
+  as_data_frame() %>%
+  rename(conf_lower = 1, conf_upper = 2)
+
+# write results with conf to file...
+tidy(mod) %>%
+  mutate(species = case_when(curve == "Pver" ~ "P. verrucosa",
+                           curve == "Pgra" ~ "P. grandis")) %>%
+  select(species, term, estimate, std.error) %>%
+  bind_cols(confints) %>%
+  select(species, term, estimate, conf_lower, conf_upper) %>%
+  write_csv("data/processed/CBASS_allpars_grp.csv")
 ```
 
 
 # Write results to file
-```{r}
-fed50 %>%
-  mutate(fragment_ID = paste("POC", geno, sep = "-")) %>%
-  select(fragment_ID, estimate, std.error) %>%
-  write_csv("data/processed/CBASS_ED50s_ind.csv")
-
-tidy(mod) %>%
-  filter(term == "ED50") %>%
-  mutate(group = case_when(curve == "P" ~ "P_verrucosa_Haplotype_3b",
-                           curve == "Haplotype" ~ "Haplotype_1a")) %>%
-  select(group, ed50 = estimate, std.error) %>%
-  write_csv("data/processed/CBASS_ED50s_grp.csv")
+```{r, eval = F}
+# fed50 %>%
+#   mutate(fragment_ID = paste("POC", geno, sep = "-")) %>%
+#   select(fragment_ID, estimate, std.error) %>%
+#   write_csv("data/processed/CBASS_ED50s_ind.csv")
+# 
+# tidy(mod) %>%
+#   #filter(term == "ED50") %>%
+#   mutate(species = case_when(curve == "Pver" ~ "P. verrucosa",
+#                            curve == "Pgra" ~ "P. grandis")) %>%
+#   select(species, term, estimate, std.error) %>%
+#   write_csv("data/processed/CBASS_allpars_grp.csv")
 
   
 ```

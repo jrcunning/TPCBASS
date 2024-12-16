@@ -79,25 +79,24 @@ TPC fitting
 Padifeld et al **rTPC and nls.multstart: A new pipeline to fit thermal performance curves in r**  
 https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.13585  
 
-Sharpe Schoolfield 1981 model
-Schoolfield, R. M., Sharpe, P. J. H., & Magnuson, C. E. (1981). Non-linear regression of biological temperature-dependent rate models based on absolute reaction-rate theory. Journal of theoretical biology, 88(4), 719-731. https://doi.org/10.1016/0022-5193(81)90246-0
 
 ```{r}
 #Photosynthesis
 Photodata$temp <- as.numeric(Photodata$Temp.Cat)
 Photodata$transformed.rate <- log10(Photodata$micromol.cm2.h+1)
 
-# choose model
-get_model_names()
-#sharpeschoolhigh_1981
+# choose rezende model
 
 # get start vals
-start_vals <- get_start_vals(Photodata$temp,Photodata$transformed.rate, model_name = 'sharpeschoolhigh_1981')
+start_vals <- get_start_vals(Photodata$temp,Photodata$transformed.rate, 
+                             model_name = 'rezende_2019')
 start_vals[2] <- 0.01
 
 # get limits
-low_lims <- get_lower_lims(Photodata$temp,Photodata$transformed.rate, model_name = 'sharpeschoolhigh_1981')
-upper_lims <- get_upper_lims(Photodata$temp,Photodata$transformed.rate, model_name = 'sharpeschoolhigh_1981')
+low_lims <- get_lower_lims(Photodata$temp,Photodata$transformed.rate, 
+                           model_name = 'rezende_2019')
+upper_lims <- get_upper_lims(Photodata$temp,Photodata$transformed.rate, 
+                             model_name = 'rezende_2019')
 
 #view values
 start_vals
@@ -110,9 +109,9 @@ upper_lims
 
 # fit  chosen model formulation in rTPC
 d_fits <- Photodata %>% group_by(fragment_ID) %>% nest() %>%
-  mutate(sharpeschoolhigh = map(data, ~nls_multstart(transformed.rate~sharpeschoolhigh_1981(temp = Temp.Cat, r_tref,e,eh,th, tref = 28),
+  mutate(rezende = map(data, ~nls_multstart(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
                         data = .x,
-                        iter = c(3,3,3,3),
+                        iter = c(5,5,5,5),
                         start_lower = start_vals - 1,
                         start_upper = start_vals + 1,
                         lower = low_lims,
@@ -129,7 +128,7 @@ d_preds <- mutate(d_fits, new_data = map(data, ~tibble(temp = seq(min(.x$temp), 
   # get rid of original data column
   select(., -data) %>%
   # stack models into a single column, with an id column for model_name
-  pivot_longer(., names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>%
+  pivot_longer(., names_to = 'model_name', values_to = 'fit', rezende) %>%
   # create new list column containing the predictions
   # this uses both fit and new_data list columns
   mutate(preds = map2(fit, new_data, ~augment(.x, new_data = .y))) %>%
@@ -162,14 +161,16 @@ ggplot(d_preds) +
 ```
 
 ```{r}
-d_params1 <- pivot_longer(d_fits, names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>%
+d_params1 <- pivot_longer(d_fits, names_to = 'model_name', values_to = 'fit', rezende) %>%
   mutate(params = map(fit, calc_params),
-         rss = map_dbl(fit, deviance)) 
+         rss = map_dbl(fit, deviance),
+         n = map_dbl(data, nrow)) 
 d_params1 %>% arrange(rss)
 
-#### Filter Topt data based on quality of fit?
+#### Filter Topt data based on quality of fit or number of data points?
 d_params <- d_params1 %>%
   #filter(rss < 0.01) %>%
+  filter(n == 6) %>%
   select(fragment_ID, rss, params) %>%
   unnest(params)
 
@@ -180,7 +181,7 @@ metadata <- read.csv("data/May_metadata_POC_TPCBASS.csv")
 d_params <- left_join(d_params, metadata, by="fragment_ID")
 
 d_params
-write.csv(d_params, file = "data/processed/TPC_May_Photo_params_ind_with_22.csv")
+write.csv(d_params, file = "data/processed/TPC_May_Photo_params_rezende_ind.csv")
 
 d_params_long <- d_params %>%
   pivot_longer(cols = rss:skewness, names_to = "metric", values_to = "value")
@@ -199,16 +200,17 @@ ggplot(aes(x=species, y=value, color=species))+
 
 # fit  chosen model formulation in rTPC
 d_fits_groups <- Photodata %>% group_by(species) %>% nest() %>%
-  mutate(sharpeschoolhigh = map(data, ~nls_multstart(transformed.rate~sharpeschoolhigh_1981(temp = Temp.Cat, r_tref,e,eh,th, tref = 28),
+  mutate(rezende = map(data, ~nls_multstart(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
                         data = .x,
-                        iter = c(3,3,3,3),
+                        iter = c(5,5,5,5),
                         start_lower = start_vals - 1,
                         start_upper = start_vals + 1,
                         lower = low_lims,
-                        upper = upper_lims,
+                        upper = upper_lims, 
                         supp_errors = 'Y',
                         convergence_count = FALSE)))
 
+<<<<<<< HEAD
 calc_params(d_fits_groups)
 
 # d_preds_groups <- mutate(d_fits_groups, new_data = map(data, ~tibble(temp = seq(min(.x$temp), max(.x$temp), length.out = 500)))) %>%
@@ -237,8 +239,36 @@ calc_params(d_fits_groups)
 #   labs(x = 'Temperature (ºC)',
 #        y = 'Metabolic rate',
 #        title = 'May fitted thermal performance curves')
+=======
+d_preds_groups <- mutate(d_fits_groups, new_data = map(data, ~tibble(temp = seq(min(.x$temp), max(.x$temp), length.out = 50)))) %>%
+  # get rid of original data column
+  select(., -data) %>%
+  # stack models into a single column, with an id column for model_name
+  pivot_longer(., names_to = 'model_name', values_to = 'fit', rezende) %>%
+  # create new list column containing the predictions
+  # this uses both fit and new_data list columns
+  mutate(preds = map2(fit, new_data, ~augment(.x, new_data = .y))) %>%
+  # select only the columns we want to keep
+  select(species, preds) %>%
+  # unlist the preds list column
+  unnest(preds)
 
-d_params_groups <- pivot_longer(d_fits_groups, names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>%
+glimpse(d_preds_groups)
+d_preds_groups
+
+ggplot(d_preds_groups) +
+  geom_line(aes(Temp.Cat, .fitted)) +
+  geom_point(aes(Temp.Cat, transformed.rate), Photodata) +
+  facet_wrap(~species) +
+  theme_bw() +
+  theme(legend.position = 'none') +
+  scale_color_brewer(type = 'qual', palette = 2) +
+  labs(x = 'Temperature (ºC)',
+       y = 'Metabolic rate',
+       title = 'May fitted thermal performance curves')
+>>>>>>> 5d0879d05aa992d466f8b6b0907fea3c24138d74
+
+d_params_groups <- pivot_longer(d_fits_groups, names_to = 'model_name', values_to = 'fit', rezende) %>%
   mutate(params = map(fit, calc_params)) %>%
   select(species, params) %>%
   unnest(params)
@@ -246,8 +276,79 @@ d_params_groups <- pivot_longer(d_fits_groups, names_to = 'model_name', values_t
 glimpse(d_params_groups)
 
 d_params_groups
-write_csv(d_params_groups, path = "data/processed/TPC_May_Photo_params_grp_with_22.csv")
+write_csv(d_params_groups, path = "data/processed/TPC_May_Photo_params_rezende_grp.csv")
 
+
+# Bootstrapping
+
+## Refit models using nlsLM and calculate parameters
+d_fits_groups2 <- d_fits_groups %>%
+  mutate(fit_nlsLM = map2(data, rezende, 
+                          ~minpack.lm::nlsLM(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
+                                             data = .x,
+                                             start = coef(.y),
+                                             lower = low_lims,
+                                             upper = upper_lims,
+                                             weights = rep(1, times = nrow(.x)))),
+         params = map(fit_nlsLM, ~calc_params(.)))
+
+# Calculate confidence intervals on parameters by bootstrapping
+
+### P. grandis [[1]]
+fit_nlsLM_Pgra <- minpack.lm::nlsLM(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
+                                             data = d_fits_groups$data[[1]],
+                                             start = coef(d_fits_groups$rezende[[1]]),
+                                             lower = low_lims,
+                                             upper = upper_lims,
+                                             weights = rep(1, times = nrow(d_fits_groups$data[[1]])))
+extra_params_Pgra <- calc_params(fit_nlsLM_Pgra) %>%
+  pivot_longer(everything(), names_to =  'param', values_to = 'estimate')
+
+ci_extra_paramsPgra <- car::Boot(fit_nlsLM_Pgra, f = function(x){unlist(calc_params(x))}, 
+                             labels = names(calc_params(fit_nlsLM_Pgra)), 
+                             R = 200, method = 'case') %>%
+  confint(., method = 'bca') %>%
+  as.data.frame() %>%
+  rename(conf_lower = 1, conf_upper = 2) %>%
+  rownames_to_column(., var = 'param') %>%
+  mutate(method = 'case bootstrap')
+  
+ci_extra_params_Pgra <- left_join(ci_extra_paramsPgra, extra_params_Pgra)
+
+### P. verrucosa [[1]]
+fit_nlsLM_Pver <- minpack.lm::nlsLM(transformed.rate~rezende_2019(temp = Temp.Cat, q10, a, b, c),
+                                             data = d_fits_groups$data[[2]],
+                                             start = coef(d_fits_groups$rezende[[2]]),
+                                             lower = low_lims,
+                                             upper = upper_lims,
+                                             weights = rep(1, times = nrow(d_fits_groups$data[[2]])))
+extra_params_Pver <- calc_params(fit_nlsLM_Pver) %>%
+  pivot_longer(everything(), names_to =  'param', values_to = 'estimate')
+
+ci_extra_paramsPver <- car::Boot(fit_nlsLM_Pver, f = function(x){unlist(calc_params(x))}, 
+                             labels = names(calc_params(fit_nlsLM_Pver)), 
+                             R = 200, method = 'case') %>%
+  confint(., method = 'bca') %>%
+  as.data.frame() %>%
+  rename(conf_lower = 1, conf_upper = 2) %>%
+  rownames_to_column(., var = 'param') %>%
+  mutate(method = 'case bootstrap')
+  
+ci_extra_params_Pver <- left_join(ci_extra_paramsPver, extra_params_Pver)
+
+
+ci_extra_params <- bind_rows(.id = "species",
+                             Pgra = ci_extra_params_Pgra, 
+                             Pver = ci_extra_params_Pver)
+  
+ggplot(ci_extra_params, aes(species, estimate)) +
+  geom_point(size = 1) +
+  geom_linerange(aes(ymin = conf_lower, ymax = conf_upper)) +
+  theme_bw() +
+  facet_wrap(~param, scales = 'free') +
+  scale_x_discrete('') +
+  labs(title = 'Calculation of confidence intervals for extra parameters',
+       subtitle = 'For the bacteria TPC; using case resampling')
 ```
 
 # LM to test an approximate e linear model
@@ -293,184 +394,4 @@ summary(verrucosa.e.mod)
 summary(verrucosa.eh.mod)
 
 ```
-
-
-
-
-<!-- Without 22°C -->
-
-<!-- ```{r, warning = FALSE} -->
-<!-- Photodata <- Photodata %>% #filter lowest temperature -->
-<!--   filter(Temp.Cat!=22 ) -->
-
-<!-- ``` -->
-
-<!-- TPC fitting  -->
-<!-- Padifeld et al **rTPC and nls.multstart: A new pipeline to fit thermal performance curves in r**   -->
-<!-- https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.13585   -->
-
-<!-- Sharpe Schoolfield 1981 model -->
-<!-- Schoolfield, R. M., Sharpe, P. J. H., & Magnuson, C. E. (1981). Non-linear regression of biological temperature-dependent rate models based on absolute reaction-rate theory. Journal of theoretical biology, 88(4), 719-731. https://doi.org/10.1016/0022-5193(81)90246-0 -->
-
-<!-- ```{r} -->
-<!-- #Photosynthesis -->
-<!-- Photodata$temp <- as.numeric(Photodata$Temp.Cat) -->
-<!-- Photodata$transformed.rate <- log10(Photodata$micromol.cm2.h+1) -->
-
-<!-- # choose model -->
-<!-- get_model_names() -->
-<!-- #sharpeschoolhigh_1981 -->
-
-<!-- # get start vals -->
-<!-- start_vals <- get_start_vals(Photodata$temp,Photodata$transformed.rate, model_name = 'sharpeschoolhigh_1981') -->
-<!-- start_vals[2] <- 0.01 -->
-
-<!-- # get limits -->
-<!-- low_lims <- get_lower_lims(Photodata$temp,Photodata$transformed.rate, model_name = 'sharpeschoolhigh_1981') -->
-<!-- upper_lims <- get_upper_lims(Photodata$temp,Photodata$transformed.rate, model_name = 'sharpeschoolhigh_1981') -->
-
-<!-- #view values -->
-<!-- start_vals -->
-<!-- low_lims -->
-<!-- upper_lims -->
-<!-- ``` -->
-
-<!-- #individal fitting -->
-<!-- ```{r} -->
-
-<!-- # fit  chosen model formulation in rTPC -->
-<!-- d_fits <- Photodata %>% group_by(fragment_ID) %>% nest() %>% -->
-<!--   mutate(sharpeschoolhigh = map(data, ~nls_multstart(transformed.rate~sharpeschoolhigh_1981(temp = Temp.Cat, r_tref,e,eh,th, tref = 28), -->
-<!--                         data = .x, -->
-<!--                         iter = c(3,3,3,3), -->
-<!--                         start_lower = start_vals - 1, -->
-<!--                         start_upper = start_vals + 1, -->
-<!--                         lower = low_lims, -->
-<!--                         upper = upper_lims, -->
-<!--                         supp_errors = 'Y', -->
-<!--                         convergence_count = FALSE))) -->
-
-
-<!-- ``` -->
-
-<!-- ```{r} -->
-<!-- # create new list column of for high resolution data -->
-<!-- d_preds <- mutate(d_fits, new_data = map(data, ~tibble(temp = seq(min(.x$temp), max(.x$temp), length.out = 50)))) %>% -->
-<!--   # get rid of original data column -->
-<!--   select(., -data) %>% -->
-<!--   # stack models into a single column, with an id column for model_name -->
-<!--   pivot_longer(., names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>% -->
-<!--   # create new list column containing the predictions -->
-<!--   # this uses both fit and new_data list columns -->
-<!--   mutate(preds = map2(fit, new_data, ~augment(.x, new_data = .y))) %>% -->
-<!--   # select only the columns we want to keep -->
-<!--   select(fragment_ID, preds) %>% -->
-<!--   # unlist the preds list column -->
-<!--   unnest(preds) -->
-
-<!-- glimpse(d_preds) -->
-
-<!-- ``` -->
-
-
-<!-- ```{r} -->
-
-<!-- ggplot(d_preds) + -->
-<!--   geom_line(aes(Temp.Cat, .fitted)) + -->
-<!--   geom_point(aes(Temp.Cat, transformed.rate), mutate(Photodata, fragment_ID = fragment_ID)) + -->
-<!--   facet_wrap(~fragment_ID, ncol = 6) + -->
-<!--   theme_bw() + -->
-<!--   theme(legend.position = 'none') + -->
-<!--   scale_color_brewer(type = 'qual', palette = 2) + -->
-<!--   labs(x = 'Temperature (ºC)', -->
-<!--        y = 'Metabolic rate', -->
-<!--        title = 'May Fitted thermal performance curves without 22°C') -->
-
-
-<!-- ``` -->
-
-<!-- ```{r} -->
-<!-- d_params1 <- pivot_longer(d_fits, names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>% -->
-<!--   mutate(params = map(fit, calc_params), -->
-<!--          rss = map_dbl(fit, deviance))  -->
-<!-- d_params1 %>% arrange(rss) -->
-
-<!-- #### Filter Topt data based on quality of fit? -->
-<!-- d_params <- d_params1 %>% -->
-<!--   #filter(rss < 0.01) %>% -->
-<!--   select(fragment_ID, rss, params) %>% -->
-<!--   unnest(params) -->
-
-<!-- glimpse(d_params) -->
-
-<!-- d_params <- left_join(d_params, metadata, by="fragment_ID") -->
-
-<!-- d_params -->
-<!-- write.csv(d_params, file = "data/processed/TPC_May_Photo_params_ind_without_22.csv") -->
-
-<!-- d_params_long <- d_params %>% -->
-<!--   pivot_longer(cols = rss:skewness, names_to = "metric", values_to = "value") -->
-
-<!-- d_params_long %>% -->
-<!-- ggplot(aes(x=species, y=value, color=species))+ -->
-<!--   geom_point()+ -->
-<!--   facet_wrap("metric", scales="free_y")+ -->
-<!--   theme_bw() -->
-
-<!-- ``` -->
-
-
-<!-- # Fit TPCs to species groups instead of individual corals -->
-<!-- ```{r} -->
-<!-- # fit  chosen model formulation in rTPC -->
-<!-- d_fits_groups <- Photodata %>% group_by(species) %>% nest() %>% -->
-<!--   mutate(sharpeschoolhigh = map(data, ~nls_multstart(transformed.rate~sharpeschoolhigh_1981(temp = Temp.Cat, r_tref,e,eh,th, tref = 28), -->
-<!--                         data = .x, -->
-<!--                         iter = c(3,3,3,3), -->
-<!--                         start_lower = start_vals - 1, -->
-<!--                         start_upper = start_vals + 1, -->
-<!--                         lower = low_lims, -->
-<!--                         upper = upper_lims, -->
-<!--                         supp_errors = 'Y', -->
-<!--                         convergence_count = FALSE))) -->
-
-<!-- d_preds_groups <- mutate(d_fits_groups, new_data = map(data, ~tibble(temp = seq(min(.x$temp), max(.x$temp), length.out = 50)))) %>% -->
-<!--   # get rid of original data column -->
-<!--   select(., -data) %>% -->
-<!--   # stack models into a single column, with an id column for model_name -->
-<!--   pivot_longer(., names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>% -->
-<!--   # create new list column containing the predictions -->
-<!--   # this uses both fit and new_data list columns -->
-<!--   mutate(preds = map2(fit, new_data, ~augment(.x, new_data = .y))) %>% -->
-<!--   # select only the columns we want to keep -->
-<!--   select(species, preds) %>% -->
-<!--   # unlist the preds list column -->
-<!--   unnest(preds) -->
-
-<!-- glimpse(d_preds_groups) -->
-<!-- d_preds_groups -->
-
-<!-- ggplot(d_preds_groups) + -->
-<!--   geom_line(aes(Temp.Cat, .fitted)) + -->
-<!--   geom_point(aes(Temp.Cat, transformed.rate), Photodata) + -->
-<!--   facet_wrap(~species) + -->
-<!--   theme_bw() + -->
-<!--   theme(legend.position = 'none') + -->
-<!--   scale_color_brewer(type = 'qual', palette = 2) + -->
-<!--   labs(x = 'Temperature (ºC)', -->
-<!--        y = 'Metabolic rate', -->
-<!--        title = 'May Fitted thermal performance curves without 22°C') -->
-
-<!-- d_params_groups <- pivot_longer(d_fits_groups, names_to = 'model_name', values_to = 'fit', sharpeschoolhigh) %>% -->
-<!--   mutate(params = map(fit, calc_params)) %>% -->
-<!--   select(species, params) %>% -->
-<!--   unnest(params) -->
-
-<!-- glimpse(d_params_groups) -->
-
-<!-- d_params_groups -->
-<!-- write_csv(d_params_groups, path = "data/processed/TPC_May_Photo_params_grp_without_22.csv") -->
-
-<!-- ``` -->
-
 
