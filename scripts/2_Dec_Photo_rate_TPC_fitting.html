@@ -465,7 +465,7 @@ d_fits &lt;- Photodata %&gt;% group_by(fragment_ID) %&gt;% nest() %&gt;%
                         supp_errors = &#39;Y&#39;,
                         convergence_count = FALSE)))</code></pre>
 <pre class="r"><code># create new list column of for high resolution data
-d_preds &lt;- mutate(d_fits, new_data = map(data, ~tibble(temp = seq(min(.x$temp), max(.x$temp), length.out = 50)))) %&gt;%
+d_preds &lt;- mutate(d_fits, new_data = map(data, ~tibble(temp = seq(min(.x$temp), max(.x$temp), length.out = 500)))) %&gt;%
   # get rid of original data column
   select(., -data) %&gt;%
   # stack models into a single column, with an id column for model_name

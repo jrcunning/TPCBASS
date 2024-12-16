@@ -127,7 +127,7 @@ d_fits <- Photodata %>% group_by(fragment_ID) %>% nest() %>%
 
 ```{r}
 # create new list column of for high resolution data
-d_preds <- mutate(d_fits, new_data = map(data, ~tibble(temp = seq(min(.x$temp), max(.x$temp), length.out = 50)))) %>%
+d_preds <- mutate(d_fits, new_data = map(data, ~tibble(temp = seq(min(.x$temp), max(.x$temp), length.out = 500)))) %>%
   # get rid of original data column
   select(., -data) %>%
   # stack models into a single column, with an id column for model_name
